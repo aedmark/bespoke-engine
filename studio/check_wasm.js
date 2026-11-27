@@ -3,6 +3,7 @@
 // Run after `zig build studio`:  node studio/check_wasm.js zig-out/bin/bespoke-studio.wasm
 'use strict';
 const fs = require('fs');
+const path = require('path');
 
 function fail(message) {
   console.error(`FAIL ${message}`);
@@ -68,6 +69,26 @@ async function main() {
   if (r.result.kind !== 'MainScriptMissing') fail(`missing main: ${JSON.stringify(r.result)}`);
   if (add('../escape.bespoke', 'x')) fail('the table must refuse a path with ..');
   console.log('ok  a missing main script is a diagnostic; unclean paths are refused');
+
+  // PNG art (D-193): The Sunken Vault's script with its PNGs beside it, as
+  // tools/build_sunken_vault.py lays out the generated project, checks valid; with the PNGs left
+  // in art/, as the scenario sits in the repository, it fails exactly as `bespoke check` does.
+  const vault = path.join(__dirname, '..', 'scenarios', 'sunken_vault');
+  const pngs = fs.readdirSync(path.join(vault, 'art')).filter((n) => n.endsWith('.png'));
+  x.studio_reset();
+  add('scripts/main.bespoke', fs.readFileSync(path.join(vault, 'main.bespoke')));
+  for (const n of pngs) add(`scripts/${n}`, fs.readFileSync(path.join(vault, 'art', n)));
+  r = check('scripts/main.bespoke');
+  if (!r.result.valid) fail(`Sunken Vault with its PNGs beside the script: ${JSON.stringify(r.result)}`);
+  console.log(`ok  PNG art decodes: The Sunken Vault checks valid with ${pngs.length} images (${r.result.scenes} scenes)`);
+  x.studio_reset();
+  add('main.bespoke', fs.readFileSync(path.join(vault, 'main.bespoke')));
+  for (const n of pngs) add(`art/${n}`, fs.readFileSync(path.join(vault, 'art', n)));
+  r = check('main.bespoke');
+  if (r.result.valid || r.result.line !== 84 || r.result.column !== 25 || !/cannot read "courtyard.png" \(FileNotFound\)/.test(r.result.message)) {
+    fail(`Sunken Vault as it sits in the repository must match bespoke check: ${JSON.stringify(r.result)}`);
+  }
+  console.log('ok  the scenario folder as committed reports main.bespoke:84:25 FileNotFound, as bespoke check does');
 
   // Repeated checks must not grow memory without bound: the compiler's arena is freed per check.
   x.studio_reset();

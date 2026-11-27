@@ -17,6 +17,20 @@ const phrase_mod = @import("../phrase.zig");
 const mml = @import("../mml.zig");
 const image_mod = @import("../image.zig");
 const png_mod = @import("../png.zig");
+
+/// Whether a build may read `image X from "<file>.png"` (D-151, D-193). Native builds may: the
+/// command line compiles art. A freestanding build is a game's browser runtime, which never
+/// decodes PNG, unless its root declares `pub const bespoke_reads_image_files = true`; only the
+/// Studio's module does, because it is an authoring tool that checks a project as the command
+/// line would. A separate function so the rule has a native test.
+pub fn reads_image_files(comptime os: std.Target.Os.Tag, comptime root_opts_in: bool) bool {
+    return os != .freestanding or root_opts_in;
+}
+
+fn root_reads_image_files() bool {
+    const root = @import("root");
+    return @hasDecl(root, "bespoke_reads_image_files") and root.bespoke_reads_image_files;
+}
 const art_import = @import("../art_import.zig");
 
 /// Reads a file a script names, such as `image X from "lamp.png"` (P46-04, D-156). Only the
@@ -2702,9 +2716,9 @@ pub const Parser = struct {
     fn image_from_file(self: *Parser, src: ImageSource, rule: ?[]const image_mod.Colour) !struct { width: usize, height: usize, pixels: []image_mod.Pixel } {
         const file_tok = src.file.?;
         const path = file_tok.slice;
-        // The browser module has no file source and carries no PNG decoder: the runtime never
-        // decodes PNG (D-151), so this path is compiled out of freestanding builds.
-        const no_files = comptime @import("builtin").os.tag == .freestanding;
+        // A game's browser runtime never decodes PNG (D-151), so this path is compiled out of
+        // freestanding builds unless the build's root opts in, as only the Studio does (D-193).
+        const no_files = comptime !reads_image_files(@import("builtin").os.tag, root_reads_image_files());
         const files = (if (no_files) null else self.files) orelse return self.error_at(file_tok, "image '{s}' reads \"{s}\", which only a compile from the command line can do; 'bespoke import' writes its rows into the script instead", .{ src.name, path });
         const bytes = files.read(files.context, self.allocator, path) catch |err|
             return self.error_at(file_tok, "image '{s}' cannot read \"{s}\" ({s})", .{ src.name, path, @errorName(err) });
@@ -4582,4 +4596,13 @@ test "P48-25: limit words accumulates across split power/element/form lines, and
     defer raw_ast.deinit();
     try raw_ast.display_names.append(testing.allocator, .{ .entity = "Hero", .text = "The Traveler" });
     try raw_ast.phrases.append(testing.allocator, .{ .key = "thing_fallback", .text = "object" });
+}
+
+test "D-193: only an opted-in root reads image files on a freestanding build" {
+    try std.testing.expect(reads_image_files(.linux, false));
+    try std.testing.expect(reads_image_files(.macos, false));
+    try std.testing.expect(!reads_image_files(.freestanding, false));
+    try std.testing.expect(reads_image_files(.freestanding, true));
+    // The test runner's root declares nothing, so native tests keep the command line's rule.
+    try std.testing.expect(!root_reads_image_files());
 }

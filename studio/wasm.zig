@@ -66,3 +66,8 @@ export fn studio_glyph(cp: u32) u64 {
     const is_placeholder = cp != font.PLACEHOLDER and std.mem.eql(u8, &glyph, &placeholder);
     return packed_cols | (@as(u64, 1) << 40) | (@as(u64, @intFromBool(is_placeholder)) << 41);
 }
+
+/// The Studio checks projects as `bespoke check` does, `image X from "<file>.png"` included,
+/// so it opts in to the compiler's PNG path on this freestanding build (D-193). A game's
+/// browser runtime declares nothing here and keeps D-151: it never decodes PNG.
+pub const bespoke_reads_image_files = true;

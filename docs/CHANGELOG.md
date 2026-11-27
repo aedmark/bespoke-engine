@@ -4,7 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
-- BeSpoke Studio shell (`P47-01`, `D-192`): `site/studio.html`, a browser workspace of screens, draggable windows with close, zoom, and depth gadgets, held right-button menus with command keys, and requesters, all drawn in the engine's 5x7 font. It opens a project folder or files, checks the main script with the engine's compiler, and shows diagnostics in a requester, a Diagnostics window, and a read-only script view with the line marked. Saving without edits leaves every file byte-identical. When the compiler module, a saved setting, or a handler fails, the Studio says so and keeps a working workspace. No editors yet.
+- BeSpoke Studio shell (`P47-01`, `D-192`): `site/studio.html`, a browser workspace of screens, draggable windows with close, zoom, and depth gadgets, held right-button menus with command keys, and requesters, all drawn in the engine's 5x7 font. It opens a project folder or files, checks the main script with the engine's compiler, and shows diagnostics in a requester, a Diagnostics window, and a read-only script view with the line marked. Saving without edits leaves every file byte-identical. When the compiler module, a saved setting, or a handler fails, the Studio says so and keeps a working workspace. It checks scripts that load PNG art (`image X from "file.png"`) as the command line does; a game's browser runtime still never decodes PNG (`D-193`). No editors yet.
 
 ## 1.1.0 - 2026-11-27
 

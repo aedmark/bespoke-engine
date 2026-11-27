@@ -2410,6 +2410,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a native SDL2 Studio with an engine-side window layer, rejected again for the toolkit cost D-151 named and because the browser page ships to authors with no install; a plain modern web UI, rejected as the maintainer's choice of look.
 
+## D-193 The Studio Reads PNG Art; a Game's Browser Runtime Still Never Does (2026-11-27, status: accepted; P47-01, clarifies D-151)
+
+**Context.** The maintainer's hand test of `P47-01` opened The Sunken Vault from disk, and the Studio refused its first `image CourtyardArt from "courtyard.png"`: the parser compiled PNG reading out of every freestanding build, to keep D-151 item 3 ("the runtime never decodes PNG"). The Studio's module is freestanding too, so it inherited a rule meant for a game's runtime, and could not check any project with art. P47-02 needs PNG import in the Studio regardless. The maintainer chose a build-level switch (2026-11-27).
+
+**Decision.**
+1. D-151 item 3 means a game's runtime: the module a game ships to players. Authoring tools that compile a project, the command line and the Studio, read and decode PNG.
+2. `parser.reads_image_files(os, root_opts_in)` decides it: native builds read image files; a freestanding build reads them only when its root declares `pub const bespoke_reads_image_files = true`. Only `studio/wasm.zig` declares it. The declaration is internal, not supported API, and a game that sets it gains nothing at run time, since a runtime loads packages and never compiles PNG art.
+3. Evidence that runtimes are unchanged: `bespoke.wasm` and `bespoke-proofs.wasm` built byte-identical before and after (SHA-256, 2026-11-27); `bespoke-studio.wasm` grew from 400,441 to 420,234 bytes for the decoder.
+
+**Consequences.** The Studio checks a project with art exactly as `bespoke check` does: The Sunken Vault laid out as its generated project checks valid, and the scenario folder as committed (PNGs in `art/`) gives the CLI's own `main.bespoke:84:25` FileNotFound (`studio/check_wasm.js`). A native test pins the rule's four cases.
+
+**Alternatives:** a `build.zig` option module, rejected because every module and every standalone `zig test src/...` run would need the import; a Studio-side PNG pass in JavaScript, rejected because it would be a second decoder whose rules could drift from `png.zig`; leaving the gap until P47-02, the maintainer's second choice.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
