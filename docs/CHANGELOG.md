@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Palette colour cycling (`P49-01`, `D-190`): top-level `cycle "<c1>" "<c2>" ... [every N]` rotates declared palette colours forward every `N` 60 Hz display frames across drawn art on both desktop and browser, stored in an optional `CYCL` package section that 1.0 readers skip cleanly.
+
 ## 1.0.1 - 2026-11-26
 
 - Generated projects pin their CI engine checkout to `refs/tags/v1.0.0` and drop the pre-1.0 test setup fallback (`P48-06`).

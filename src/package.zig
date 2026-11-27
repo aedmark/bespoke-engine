@@ -94,9 +94,19 @@ pub const Section = enum(u8) {
     images,
     art,
     text,
+    cycles,
 
     pub fn tag(self: Section) [4]u8 {
         return SECTION_TAGS[@intFromEnum(self)];
+    }
+
+    /// Flags byte written in the section header: `cycles` is optional (`0`) so 1.0 readers
+    /// skip it and draw static QOI art (P49-01, D-190).
+    pub fn flags(self: Section) u8 {
+        return switch (self) {
+            .cycles => 0,
+            else => SECTION_REQUIRED,
+        };
     }
 
     pub fn from_tag(t: [4]u8) ?Section {
@@ -108,7 +118,7 @@ pub const Section = enum(u8) {
 pub const SECTION_TAGS = [_][4]u8{
     "NAME".*, "PLAC".*, "CODE".*, "RULE".*, "DRFT".*, "SOCI".*, "DUEL".*, "DGRD".*,
     "GRID".*, "AGND".*, "CMND".*, "SCOR".*, "CAST".*, "GURD".*, "GOAL".*, "SPEL".*,
-    "DCSN".*, "AXIS".*, "REDL".*, "DLMA".*, "IMGS".*, "ARTB".*, "TEXT".*,
+    "DCSN".*, "AXIS".*, "REDL".*, "DLMA".*, "IMGS".*, "ARTB".*, "TEXT".*, "CYCL".*,
 };
 
 comptime {
@@ -866,6 +876,41 @@ fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
     errdefer art.deinit_owned(allocator);
     try art.validate();
     return art;
+}
+
+fn write_art_cycles(writer: anytype, art: image_mod.Art) !void {
+    try writer.writeInt(u16, @intCast(art.cycles.len), .little);
+    for (art.cycles) |cycle| {
+        try writer.writeInt(u16, cycle.every, .little);
+        try writer.writeInt(u16, @intCast(cycle.colours.len), .little);
+        for (cycle.colours) |c| try writer.writeAll(&.{ c.r, c.g, c.b });
+    }
+}
+
+/// Untrusted input: cycle count and per-cycle colour count are bounded before allocating, and
+/// `art.validate()` checks intervals, non-zero bounds, and disjoint RGBs (P49-01, D-190).
+fn read_art_cycles(allocator: std.mem.Allocator, reader: anytype, art: *image_mod.Art) !void {
+    const count = try reader.takeInt(u16, .little);
+    if (count > image_mod.MAX_CYCLES) return error.InvalidImageBinding;
+    const cycles = try allocator.alloc(image_mod.ColourCycle, count);
+    for (cycles) |*c| c.* = .{ .colours = &.{} };
+    art.cycles = cycles;
+    for (cycles) |*cycle| {
+        cycle.every = try reader.takeInt(u16, .little);
+        const len = try reader.takeInt(u16, .little);
+        if (len < 2 or len >= image_mod.MAX_COLOURS) return error.InvalidImageBinding;
+        const colours = try allocator.alloc(image_mod.Colour, len);
+        cycle.colours = colours;
+        for (colours) |*c| {
+            var rgb: [3]u8 = undefined;
+            try reader.readSliceAll(&rgb);
+            c.* = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] };
+        }
+    }
+    art.validate() catch |err| return switch (err) {
+        error.InvalidImageBinding => error.InvalidImageBinding,
+        else => err,
+    };
 }
 
 /// Untrusted input: entities must exist; `dilemma.validate` checks the axis, the axis entity,
@@ -1673,7 +1718,7 @@ pub fn save_package(
         if (try write_section(allocator, which, &bw.writer, compiled, world, spatial)) {
             var pw = ListWriter.init(&payload);
             try pw.writer.writeAll(&which.tag());
-            try pw.writer.writeByte(SECTION_REQUIRED);
+            try pw.writer.writeByte(which.flags());
             try pw.writer.writeInt(u32, @intCast(body.items.len), .little);
             try pw.writer.writeAll(body.items);
         }
@@ -1843,6 +1888,7 @@ fn write_section(allocator: std.mem.Allocator, comptime which: Section, w: anyty
             try write_player_text(world, w);
             return true;
         },
+        .cycles => return used(compiled.art.cycles.len) and try done(write_art_cycles(w, compiled.art)),
     }
 }
 
@@ -2470,6 +2516,11 @@ pub fn load_package_linked(
         try read_player_text(allocator, world, &stream);
         try finish(&stream);
     };
+    if (comptime linked.contains(.cycles)) if (table.get(.cycles)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        try read_art_cycles(allocator, &stream, &art);
+        try finish(&stream);
+    };
 
     return CompiledProgram{
         .drafts = drafts,
@@ -3045,5 +3096,124 @@ test "P48-24: read_str frees buffer on truncated stream and package bounds refus
         reseal_for_test(bad);
         try testing.expectError(error.BytecodeTooLarge, load_for_test(bad));
     }
+}
+
+test "P49-01: colour cycles round-trip in optional CYCL section and 1.0 readers skip it cleanly" {
+    const testing = std.testing;
+    const script =
+        \\scene Shore:
+        \\  cast: Hero
+        \\  marks: Pier
+        \\palette:
+        \\  "." transparent
+        \\  "a" 10 20 30
+        \\  "b" 40 50 60
+        \\  "c" 70 80 90
+        \\  "d" 100 110 120
+        \\  "e" 130 140 150
+        \\cycle "a" "b" "c" every 8
+        \\cycle "d" "e"
+        \\image Beacon:
+        \\  "ab"
+        \\  "de"
+        \\sprite Hero: Beacon
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+    ;
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    try package_of(testing.allocator, script, &bytes);
+
+    // 1. Verify CYCL section header has flags == 0 (optional).
+    const payload = bytes.items[@sizeOf(PackageHeader)..];
+    const table = try read_section_table(payload);
+    const cycl_bytes = table.get(.cycles).?;
+    const cycl_header_offset = @intFromPtr(cycl_bytes.ptr) - @intFromPtr(bytes.items.ptr) - SECTION_HEADER_LEN;
+    try testing.expectEqualStrings("CYCL", bytes.items[cycl_header_offset..][0..4]);
+    try testing.expectEqual(@as(u8, 0), bytes.items[cycl_header_offset + 4]);
+
+    // 2. Full round-trip loads both cycles intact.
+    {
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var stream: std.Io.Reader = .fixed(bytes.items);
+        var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 2), loaded.art.cycles.len);
+        try testing.expectEqual(@as(u16, 8), loaded.art.cycles[0].every);
+        try testing.expectEqual(@as(usize, 3), loaded.art.cycles[0].colours.len);
+        try testing.expectEqual(image_mod.Colour{ .r = 70, .g = 80, .b = 90 }, loaded.art.cycles[0].colours[2]);
+        try testing.expectEqual(@as(u16, image_mod.DEFAULT_CYCLE_INTERVAL), loaded.art.cycles[1].every);
+        try testing.expectEqual(@as(usize, 2), loaded.art.cycles[1].colours.len);
+    }
+
+    // 3. A build that omits .cycles refuses it as UnlinkedSection, while a 1.0 reader that does
+    // not know the tag skips it cleanly when flags == 0.
+    {
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        const v1_sections = comptime ALL_SECTIONS.differenceWith(SectionSet.initOne(.cycles));
+        var stream: std.Io.Reader = .fixed(bytes.items);
+        try testing.expectError(error.UnlinkedSection, load_package_linked(v1_sections, testing.allocator, &stream, &world, &spatial));
+    }
+    {
+        const unknown_opt = try testing.allocator.dupe(u8, bytes.items);
+        defer testing.allocator.free(unknown_opt);
+        @memcpy(unknown_opt[cycl_header_offset..][0..4], "CYC9");
+        reseal_for_test(unknown_opt);
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var stream: std.Io.Reader = .fixed(unknown_opt);
+        var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.art.cycles.len);
+        try testing.expectEqual(@as(usize, 1), loaded.art.images.len);
+    }
+
+    // 4. Corrupt CYCL payloads fail cleanly with zero leaks.
+    const BadCycl = struct { bytes: []const u8, err: anyerror };
+    const corrupt_cases = [_]BadCycl{
+        .{ .bytes = &.{ 65, 0 }, .err = error.InvalidImageBinding }, // count > MAX_CYCLES
+        .{ .bytes = &.{ 1, 0, 8, 0, 1, 0, 1, 2, 3 }, .err = error.InvalidImageBinding }, // len == 1 (< 2)
+        .{ .bytes = &.{ 1, 0, 0, 0, 2, 0, 1, 2, 3, 4, 5, 6 }, .err = error.InvalidImageBinding }, // every == 0
+        .{ .bytes = &.{ 1, 0, 8, 0, 2, 0, 1, 2, 3, 1, 2, 3 }, .err = error.InvalidImageBinding }, // duplicate RGB
+        .{ .bytes = &.{ 1, 0, 8, 0, 2, 0, 1, 2, 3 }, .err = error.EndOfStream }, // truncated
+        .{ .bytes = &.{ 1, 0, 8, 0, 2, 0, 1, 2, 3, 4, 5, 6, 99 }, .err = error.InvalidSection }, // trailing byte
+    };
+    for (corrupt_cases) |bad_cycl| {
+        const prefix = bytes.items[0 .. cycl_header_offset + SECTION_HEADER_LEN];
+        const suffix = bytes.items[cycl_header_offset + SECTION_HEADER_LEN + cycl_bytes.len ..];
+        var bad = std.array_list.Managed(u8).init(testing.allocator);
+        defer bad.deinit();
+        try bad.appendSlice(prefix);
+        try bad.appendSlice(bad_cycl.bytes);
+        try bad.appendSlice(suffix);
+        std.mem.writeInt(u32, bad.items[cycl_header_offset + 5 ..][0..4], @intCast(bad_cycl.bytes.len), .little);
+        std.mem.writeInt(u32, bad.items[@sizeOf(PackageHeader) - 4 ..][0..4], @intCast(bad.items.len - @sizeOf(PackageHeader)), .little);
+        reseal_for_test(bad.items);
+        try testing.expectError(bad_cycl.err, load_for_test(bad.items));
+    }
+}
+
+test "P49-01: compatibility fixture format-1-cycles.bspk loads with its colour cycle" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/format-1-cycles.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 1), loaded.art.cycles.len);
+    try testing.expectEqual(@as(u16, 8), loaded.art.cycles[0].every);
+    try testing.expectEqual(@as(usize, 3), loaded.art.cycles[0].colours.len);
 }
 

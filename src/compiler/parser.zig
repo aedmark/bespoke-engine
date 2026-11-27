@@ -572,6 +572,14 @@ pub const ArtDecl = struct {
     areas: []const AreaBinding = &.{},
     looks: []const LookBinding = &.{},
     parts: []const PartBinding = &.{},
+    cycles: []const image_mod.ColourCycle = &.{},
+};
+/// One `cycle "a" "b" ... [every N]` declaration (P49-01, D-190).
+pub const CycleSource = struct {
+    at: Token,
+    codes: []const Token,
+    every: u32 = image_mod.DEFAULT_CYCLE_INTERVAL,
+    every_at: ?Token = null,
 };
 /// `area <Prop>: x y w h` in art pixels (P46-05, D-158).
 pub const AreaBinding = struct { target: []const u8, x: u16, y: u16, w: u16, h: u16, at: Token };
@@ -748,6 +756,7 @@ pub const Parser = struct {
     area_srcs: std.ArrayListUnmanaged(AreaBinding) = .empty,
     look_srcs: std.ArrayListUnmanaged(LookSource) = .empty,
     part_srcs: std.ArrayListUnmanaged(PartBinding) = .empty,
+    cycle_srcs: std.ArrayListUnmanaged(CycleSource) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -2538,6 +2547,10 @@ pub const Parser = struct {
             try self.parse_palette(start);
             return true;
         }
+        if (std.mem.eql(u8, word, "cycle") and same_line and self.current.tag == .string_literal) {
+            try self.parse_cycle(start);
+            return true;
+        }
         if (std.mem.eql(u8, word, "backdrop") and same_line and self.current.tag == .colon) {
             try self.advance();
             if (ast.scene_defs.items.len == 0) return self.error_at(start, "a backdrop belongs to a scene; put it under a 'scene:' line", .{});
@@ -2603,6 +2616,31 @@ pub const Parser = struct {
             try self.palette_src.append(self.allocator, .{ .code = code, .colour = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] } });
         }
         _ = try self.expect(.dedent);
+    }
+
+    fn parse_cycle(self: *Parser, start: Token) !void {
+        var codes = std.ArrayListUnmanaged(Token).empty;
+        while (self.current.line == start.line and self.current.tag == .string_literal) {
+            try codes.append(self.allocator, self.current);
+            try self.advance();
+        }
+        var every: u32 = image_mod.DEFAULT_CYCLE_INTERVAL;
+        var every_at: ?Token = null;
+        if (self.current.line == start.line and self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "every")) {
+            try self.advance();
+            if (self.current.line != start.line) return self.set_error("a colour cycle expects a whole number after 'every'", .{});
+            every_at = self.current;
+            every = try self.take_u32();
+        }
+        if (self.current.line == start.line and self.current.tag != .newline and self.current.tag != .eof) {
+            return self.error_at(self.current, "a colour cycle takes quoted palette codes and an optional 'every <N>' on one line", .{});
+        }
+        try self.cycle_srcs.append(self.allocator, .{
+            .at = start,
+            .codes = try codes.toOwnedSlice(self.allocator),
+            .every = every,
+            .every_at = every_at,
+        });
     }
 
     fn parse_image(self: *Parser, start: Token) !void {
@@ -3021,6 +3059,47 @@ pub const Parser = struct {
                 return self.error_at(a.at, "area '{s}' is for a prop no scene declares in 'props:'", .{a.target});
             }
         }
+        var cycles = std.array_list.Managed(image_mod.ColourCycle).init(self.allocator);
+        if (self.cycle_srcs.items.len > 0) {
+            if (self.palette_src.items.len == 0)
+                return self.error_at(self.cycle_srcs.items[0].at, "a colour cycle needs a 'palette:' declaration", .{});
+            if (self.cycle_srcs.items.len > image_mod.MAX_CYCLES)
+                return self.error_at(self.cycle_srcs.items[image_mod.MAX_CYCLES].at, "a game has at most {d} colour cycles", .{image_mod.MAX_CYCLES});
+            var total_cycled: usize = 0;
+            for (self.cycle_srcs.items) |src| {
+                if (src.codes.len < 2)
+                    return self.error_at(src.at, "a colour cycle needs at least two palette codes", .{});
+                if (src.codes.len >= image_mod.MAX_COLOURS)
+                    return self.error_at(src.at, "a colour cycle has at most {d} colours", .{image_mod.MAX_COLOURS - 1});
+                if (src.every == 0 or src.every > image_mod.MAX_DURATION)
+                    return self.error_at(src.every_at orelse src.at, "a colour cycle's 'every' interval is {d}; use 1 to {d} display frames", .{ src.every, image_mod.MAX_DURATION });
+                total_cycled += src.codes.len;
+                if (total_cycled >= image_mod.MAX_COLOURS)
+                    return self.error_at(src.at, "colour cycles together hold at most {d} colours", .{image_mod.MAX_COLOURS - 1});
+                const own = try self.allocator.alloc(image_mod.Colour, src.codes.len);
+                for (src.codes, own, 0..) |code_tok, *dst, j| {
+                    const index = for (self.palette_src.items, 0..) |entry, pi| {
+                        if (std.mem.eql(u8, entry.code.slice, code_tok.slice)) break pi;
+                    } else return self.error_at(code_tok, "colour cycle uses code \"{s}\", which the palette does not declare", .{code_tok.slice});
+                    if (index == 0)
+                        return self.error_at(code_tok, "palette code \"{s}\" is transparent and cannot be cycled", .{code_tok.slice});
+                    const c = palette.items[index];
+                    for (own[0..j]) |prior| {
+                        if (std.meta.eql(prior, c))
+                            return self.error_at(code_tok, "colour cycle repeats colour {d} {d} {d} (\"{s}\"); each cycled colour may belong to one cycle once", .{ c.r, c.g, c.b, code_tok.slice });
+                    }
+                    for (cycles.items) |other| {
+                        for (other.colours) |prior| {
+                            if (std.meta.eql(prior, c))
+                                return self.error_at(code_tok, "colour cycle repeats colour {d} {d} {d} (\"{s}\"); each cycled colour may belong to one cycle once", .{ c.r, c.g, c.b, code_tok.slice });
+                        }
+                    }
+                    dst.* = c;
+                }
+                try cycles.append(.{ .colours = own, .every = @intCast(src.every) });
+            }
+        }
+
         const codes = try self.allocator.alloc([]const u8, self.palette_src.items.len);
         for (self.palette_src.items, codes) |entry, *code| code.* = entry.code.slice;
         ast.art = .{
@@ -3032,6 +3111,7 @@ pub const Parser = struct {
             .areas = self.area_srcs.items,
             .looks = try looks.toOwnedSlice(),
             .parts = self.part_srcs.items,
+            .cycles = try cycles.toOwnedSlice(),
         };
     }
 

@@ -1,0 +1,11 @@
+# Each cycled RGB colour may appear in at most one cycle once.
+# pins: D-190
+# expect error: UnexpectedToken 11:7
+
+palette:
+  "." transparent
+  "a" 10 20 30
+  "b" 40 50 60
+  "c" 70 80 90
+cycle "a" "b"
+cycle "b" "c"

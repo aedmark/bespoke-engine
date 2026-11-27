@@ -66,7 +66,7 @@ comptime {
     require(bespoke.hint.Tier, &.{ "fromInt", "number", "generated", "label" }, "hint.Tier");
     require(bespoke.dilemma, &.{ "Stage", "Status" }, "dilemma");
     require(bespoke.value, &.{"KnownValue"}, "value");
-    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Pixel", "from_indices", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_ART_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
+    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Pixel", "from_indices", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "ColourCycle", "ColourMap", "MAX_CYCLES", "DEFAULT_CYCLE_INTERVAL", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_ART_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
     require(bespoke.image.Pixel, &.{"opaque_colour"}, "image.Pixel");
     require(bespoke.image.Image, &.{ "columns", "frame_count", "frame_pixel", "validate" }, "image.Image");
     require(bespoke.image.Art, &.{ "is_empty", "find", "backdrop_for", "sprite_for", "area_for", "look_named", "part_for", "validate", "dupe", "deinit_owned" }, "image.Art");
@@ -95,7 +95,8 @@ comptime {
     require(bespoke.phrase, &.{ "Key", "Entry", "ENTRIES", "Arg", "Error", "find", "entry", "text", "validate", "render", "fill" }, "phrase");
     require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for", "PRE_1_0_SAVE_MAGIC" }, "save");
     require(bespoke.package, &.{ "PACKAGE_MAGIC", "PRE_1_0_MAGIC", "PACKAGE_FORMAT", "PackageHeader", "Section", "SECTION_TAGS", "SectionSet", "ALL_SECTIONS", "SECTION_REQUIRED", "save_package", "load_package", "load_package_linked", "sections_in", "save_package_file", "load_package_file", "version_from_bytes", "is_pre_1_0", "format_unsupported_version", "PRE_1_0_MESSAGE" }, "package");
-    require(bespoke.package.Section, &.{ "tag", "from_tag" }, "package.Section");
+    require(bespoke.package.Section, &.{ "tag", "flags", "from_tag" }, "package.Section");
+    require(bespoke.display.Canvas, &.{"draw_image_cycled"}, "display.Canvas");
     require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");
 }
 

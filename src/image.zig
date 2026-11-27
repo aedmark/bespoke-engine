@@ -158,6 +158,78 @@ pub const ANIM_COUNT = @typeInfo(Anim).@"enum".field_names.len;
 pub const MAX_STEPS: usize = 64;
 pub const MAX_DURATION: u16 = 600;
 pub const MAX_BINDINGS: usize = 1024;
+/// Colour cycling bounds (P49-01, D-190).
+pub const MAX_CYCLES: usize = 64;
+pub const DEFAULT_CYCLE_INTERVAL: u16 = 6;
+
+/// One palette colour cycle (P49-01, D-190): `colours` rotate forward by one step every
+/// `every` 60 Hz display frames.
+pub const ColourCycle = struct {
+    colours: []const Colour,
+    every: u16 = DEFAULT_CYCLE_INTERVAL,
+
+    pub fn step_at(self: ColourCycle, clock: u64) usize {
+        std.debug.assert(self.colours.len >= 2 and self.every > 0);
+        return @intCast((clock / self.every) % self.colours.len);
+    }
+
+    /// The colour drawn at display frame `clock` for pixels painted with `colours[index]`.
+    pub fn colour_at(self: ColourCycle, index: usize, clock: u64) Colour {
+        const k = self.step_at(clock);
+        return self.colours[(index + self.colours.len - k) % self.colours.len];
+    }
+};
+
+/// Per-frame RGB lookup built once before drawing a frame's art (P49-01, D-190). When no
+/// cycle has stepped (`count == 0`), `remap` is a fast no-op.
+pub const ColourMap = struct {
+    pub const CAPACITY: usize = 512;
+    const Entry = struct { key: u32 = 0, value: Pixel = TRANSPARENT };
+
+    entries: [CAPACITY]Entry = @splat(.{}),
+    count: usize = 0,
+
+    fn pack(c: Colour) u32 {
+        return (@as(u32, 0xff) << 24) | (@as(u32, c.r) << 16) | (@as(u32, c.g) << 8) | @as(u32, c.b);
+    }
+
+    fn slot_index(key: u32) usize {
+        return @intCast((key *% 2654435761) & (CAPACITY - 1));
+    }
+
+    pub fn from_cycles(cycles: []const ColourCycle, clock: u64) ColourMap {
+        var map = ColourMap{};
+        for (cycles) |cycle| {
+            if (cycle.colours.len < 2 or cycle.every == 0) continue;
+            const k = cycle.step_at(clock);
+            if (k == 0) continue;
+            for (cycle.colours, 0..) |c, i| {
+                const key = pack(c);
+                var idx = slot_index(key);
+                while (map.entries[idx].key != 0 and map.entries[idx].key != key) {
+                    idx = (idx + 1) & (CAPACITY - 1);
+                }
+                if (map.entries[idx].key == 0) map.count += 1;
+                map.entries[idx] = .{
+                    .key = key,
+                    .value = Pixel.opaque_colour(cycle.colours[(i + cycle.colours.len - k) % cycle.colours.len]),
+                };
+            }
+        }
+        return map;
+    }
+
+    pub fn remap(self: *const ColourMap, p: Pixel) Pixel {
+        if (self.count == 0 or p.a == 0) return p;
+        const key = (@as(u32, 0xff) << 24) | (@as(u32, p.r) << 16) | (@as(u32, p.g) << 8) | @as(u32, p.b);
+        var idx = slot_index(key);
+        while (self.entries[idx].key != 0) {
+            if (self.entries[idx].key == key) return self.entries[idx].value;
+            idx = (idx + 1) & (CAPACITY - 1);
+        }
+        return p;
+    }
+};
 
 /// One step of an animation: a frame of the sheet and how many 60 Hz display frames it shows
 /// (D-152 point 3).
@@ -246,9 +318,10 @@ pub const Art = struct {
     areas: []const Area = &.{},
     looks: []const Look = &.{},
     parts: []const Part = &.{},
+    cycles: []const ColourCycle = &.{},
 
     pub fn is_empty(self: Art) bool {
-        return self.images.len == 0 and self.areas.len == 0 and self.looks.len == 0 and self.parts.len == 0;
+        return self.images.len == 0 and self.areas.len == 0 and self.looks.len == 0 and self.parts.len == 0 and self.cycles.len == 0;
     }
 
     pub fn look_named(self: *const Art, name: []const u8) ?*const Look {
@@ -339,6 +412,20 @@ pub const Art = struct {
             if (!a.valid()) return Error.InvalidImageBinding;
             for (self.areas[0..i]) |prior| if (prior.entity == a.entity) return Error.InvalidImageBinding;
         }
+        if (self.cycles.len > MAX_CYCLES) return Error.InvalidImageBinding;
+        var total_cycled: usize = 0;
+        for (self.cycles, 0..) |cycle, ci| {
+            if (cycle.colours.len < 2 or cycle.colours.len >= MAX_COLOURS) return Error.InvalidImageBinding;
+            if (cycle.every == 0 or cycle.every > MAX_DURATION) return Error.InvalidImageBinding;
+            total_cycled += cycle.colours.len;
+            if (total_cycled >= MAX_COLOURS) return Error.InvalidImageBinding;
+            for (cycle.colours, 0..) |c, j| {
+                for (cycle.colours[0..j]) |prior| if (std.meta.eql(prior, c)) return Error.InvalidImageBinding;
+                for (self.cycles[0..ci]) |other| {
+                    for (other.colours) |prior| if (std.meta.eql(prior, c)) return Error.InvalidImageBinding;
+                }
+            }
+        }
     }
 
     /// Validates, then copies everything into memory owned by `allocator`.
@@ -375,6 +462,13 @@ pub const Art = struct {
             copy.image = sprite.image;
             for (sprite.animations, &copy.animations) |steps, *own| own.* = try allocator.dupe(Step, steps);
         }
+        const cycles = try allocator.alloc(ColourCycle, source.cycles.len);
+        for (cycles) |*cycle| cycle.* = .{ .colours = &.{} };
+        art.cycles = cycles;
+        for (source.cycles, cycles) |cycle, *copy| {
+            copy.every = cycle.every;
+            copy.colours = try allocator.dupe(Colour, cycle.colours);
+        }
         return art;
     }
 
@@ -391,6 +485,8 @@ pub const Art = struct {
         allocator.free(self.looks);
         for (self.sprites) |sprite| for (sprite.animations) |steps| allocator.free(steps);
         allocator.free(self.sprites);
+        for (self.cycles) |cycle| allocator.free(cycle.colours);
+        allocator.free(self.cycles);
         self.* = .{};
     }
 };
@@ -540,4 +636,53 @@ test "P48-25: part attachment cycles (2-node and 3-node) are rejected by Art.val
         .{ .entity = c, .host = a, .dx = 0, .dy = 0 },
     } };
     try std.testing.expectError(Error.InvalidImageBinding, three.validate());
+}
+
+test "P49-01: colour cycles rotate forward and validate bounds and disjoint RGBs" {
+    const a = Colour{ .r = 10, .g = 20, .b = 30 };
+    const b = Colour{ .r = 40, .g = 50, .b = 60 };
+    const c = Colour{ .r = 70, .g = 80, .b = 90 };
+    const d = Colour{ .r = 100, .g = 110, .b = 120 };
+    const cycle = ColourCycle{ .colours = &.{ a, b, c }, .every = 8 };
+
+    try std.testing.expectEqual(a, cycle.colour_at(0, 0));
+    try std.testing.expectEqual(c, cycle.colour_at(0, 8));
+    try std.testing.expectEqual(a, cycle.colour_at(1, 8));
+    try std.testing.expectEqual(b, cycle.colour_at(2, 8));
+    try std.testing.expectEqual(b, cycle.colour_at(0, 16));
+    try std.testing.expectEqual(a, cycle.colour_at(0, 24));
+
+    const map0 = ColourMap.from_cycles(&.{cycle}, 0);
+    try std.testing.expectEqual(@as(usize, 0), map0.count);
+    try std.testing.expectEqual(Pixel.opaque_colour(a), map0.remap(Pixel.opaque_colour(a)));
+
+    const map8 = ColourMap.from_cycles(&.{cycle}, 8);
+    try std.testing.expectEqual(@as(usize, 3), map8.count);
+    try std.testing.expectEqual(Pixel.opaque_colour(c), map8.remap(Pixel.opaque_colour(a)));
+    try std.testing.expectEqual(Pixel.opaque_colour(a), map8.remap(Pixel.opaque_colour(b)));
+    try std.testing.expectEqual(Pixel.opaque_colour(b), map8.remap(Pixel.opaque_colour(c)));
+    try std.testing.expectEqual(Pixel.opaque_colour(d), map8.remap(Pixel.opaque_colour(d)));
+    try std.testing.expectEqual(TRANSPARENT, map8.remap(TRANSPARENT));
+
+    try (Art{ .cycles = &.{cycle} }).validate();
+    try std.testing.expect(!(Art{ .cycles = &.{cycle} }).is_empty());
+
+    var owned = try Art.dupe(std.testing.allocator, .{ .cycles = &.{cycle} });
+    defer owned.deinit_owned(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), owned.cycles.len);
+    try std.testing.expectEqual(@as(u16, 8), owned.cycles[0].every);
+    try std.testing.expectEqualSlices(Colour, &.{ a, b, c }, owned.cycles[0].colours);
+
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .cycles = &.{.{ .colours = &.{a}, .every = 6 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .cycles = &.{.{ .colours = &.{ a, b }, .every = 0 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .cycles = &.{.{ .colours = &.{ a, b }, .every = MAX_DURATION + 1 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .cycles = &.{.{ .colours = &.{ a, b, a }, .every = 6 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .cycles = &.{
+        .{ .colours = &.{ a, b }, .every = 6 },
+        .{ .colours = &.{ b, c }, .every = 6 },
+    } }).validate());
+
+    var too_many: [MAX_CYCLES + 1]ColourCycle = undefined;
+    for (&too_many) |*slot| slot.* = .{ .colours = &.{ a, b }, .every = 6 };
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .cycles = &too_many }).validate());
 }

@@ -1534,23 +1534,30 @@ pub const DisplayWindow = struct {
         self.art = if (art) |a| (if (a.is_empty()) null else a) else null;
     }
 
+    fn active_colour_map(self: *const DisplayWindow, storage: *image_mod.ColourMap) ?*const image_mod.ColourMap {
+        const art = self.art orelse return null;
+        if (art.cycles.len == 0) return null;
+        storage.* = image_mod.ColourMap.from_cycles(art.cycles, self.animation_clock);
+        return if (storage.count > 0) storage else null;
+    }
+
     /// Draws one sprite frame standing on `pt`: the frame's bottom edge on the spot, centred
     /// across it (D-155). The frame is a label obstacle, so names and prompts settle beside the
     /// art rather than on it. Returns the frame's height in frame pixels, for the label above it.
     /// Draws what `entity` shows, then its parts (P48-11, D-181). A thing with an area draws at
     /// the area's top-left; anything else stands bottom-centre on `pt`. Returns the height.
-    fn draw_parts(self: *DisplayWindow, frame: *const RenderFrame, host: EntityId, bottom: Point, anim: image_mod.Anim, labels: *TextLayoutResolver) void {
+    fn draw_parts(self: *DisplayWindow, frame: *const RenderFrame, host: EntityId, bottom: Point, anim: image_mod.Anim, labels: *TextLayoutResolver, colour_map: ?*const image_mod.ColourMap) void {
         const art = self.art.?;
         for (art.parts) |part| {
             if (part.host != host) continue;
             const part_shown = shown_for(art, frame, part.entity) orelse continue;
             const box = part_box(art, part, part_shown.image, bottom);
-            if (self.canvas) |*cv| cv.draw_image(&art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y);
+            if (self.canvas) |*cv| cv.draw_image_cycled(&art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y, colour_map);
             labels.add_obstacle(box.x, box.y, box.w, box.h);
         }
     }
 
-    fn draw_shown(self: *DisplayWindow, frame: *const RenderFrame, entity: EntityId, shown: Shown, anim: image_mod.Anim, pt: Point, labels: *TextLayoutResolver) i32 {
+    fn draw_shown(self: *DisplayWindow, frame: *const RenderFrame, entity: EntityId, shown: Shown, anim: image_mod.Anim, pt: Point, labels: *TextLayoutResolver, colour_map: ?*const image_mod.ColourMap) i32 {
         const art = self.art.?;
         const img = &art.images[shown.image];
         const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
@@ -1559,10 +1566,10 @@ pub const DisplayWindow = struct {
             const r = area_rect(area);
             break :blk .{ .x = r.x, .y = r.y };
         } else .{ .x = pt.x - @divTrunc(w, 2), .y = pt.y - h };
-        if (self.canvas) |*cv| cv.draw_image(img, shown.frame_at(anim, self.animation_clock), origin.x, origin.y);
+        if (self.canvas) |*cv| cv.draw_image_cycled(img, shown.frame_at(anim, self.animation_clock), origin.x, origin.y, colour_map);
         labels.add_obstacle(origin.x, origin.y, w, h);
         const bottom = Point{ .x = origin.x + @divTrunc(w, 2), .y = origin.y + h };
-        self.draw_parts(frame, entity, bottom, anim, labels);
+        self.draw_parts(frame, entity, bottom, anim, labels, colour_map);
         return h;
     }
 
@@ -3265,13 +3272,15 @@ pub const DisplayWindow = struct {
         // 1. Backdrop: the host's theme draws its scene; without one, a neutral stage (D-039)
         // The backdrop is the one layer D-124 lets extend behind the log; the probe keeps it
         // apart from proof scenery so the band check can skip it by kind (P43-02).
+        var cycle_storage: image_mod.ColourMap = undefined;
+        const colour_map = self.active_colour_map(&cycle_storage);
         if (self.canvas) |*cv| cv.rect_kind = .backdrop;
         // A declared backdrop is the room (P46-03, D-155): it replaces the theme's scenery, and
         // the stage's walkways and resting mark discs are hidden over it. Hover and target
         // prompts still show, and every click target is unchanged.
         const art_backdrop: ?*const image_mod.Image = if (self.art) |a| a.backdrop_for(frame.scene_entity) else null;
         if (art_backdrop) |img| {
-            if (self.canvas) |*cv| cv.draw_image(img, 0, 0, 0);
+            if (self.canvas) |*cv| cv.draw_image_cycled(img, 0, 0, 0, colour_map);
         }
         const backdrop_drawn = art_backdrop != null or if (self.theme) |t| (if (t.backdrop) |draw| draw(&self.canvas.?, frame) else false) else false;
         if (!backdrop_drawn) self.render_default_backdrop(frame);
@@ -3293,7 +3302,7 @@ pub const DisplayWindow = struct {
             }
 
             const prop_sprite: ?Shown = shown_for(self.art, frame, hs.entity);
-            if (prop_sprite) |shown| _ = self.draw_shown(frame, hs.entity, shown, .idle, pt, &layout_resolver);
+            if (prop_sprite) |shown| _ = self.draw_shown(frame, hs.entity, shown, .idle, pt, &layout_resolver, colour_map);
             const prop_drawn = prop_sprite != null or if (self.theme) |t| (if (t.prop) |draw| draw(&self.canvas.?, frame, .{
                 .hotspot = &hs,
                 .index = idx,
@@ -3303,7 +3312,7 @@ pub const DisplayWindow = struct {
             }) else false) else false;
             const prop_area: ?image_mod.Area = if (self.art) |a| a.area_for(hs.entity) else null;
             if (prop_sprite == null and prop_area != null) {
-                if (self.art) |a| self.draw_parts(frame, hs.entity, shown_anchor_bottom(a, frame, hs.entity, pt), .idle, &layout_resolver);
+                if (self.art) |a| self.draw_parts(frame, hs.entity, shown_anchor_bottom(a, frame, hs.entity, pt), .idle, &layout_resolver, colour_map);
             }
             // A prop with an area is part of the art: nothing more is drawn for it (D-158).
             if (!prop_drawn and prop_area == null) {
@@ -3527,7 +3536,7 @@ pub const DisplayWindow = struct {
 
             const actor_sprite: ?Shown = shown_for(self.art, frame, e.entity);
             if (actor_sprite) |shown| {
-                const h = self.draw_shown(frame, e.entity, shown, e.heading, pt, &layout_resolver);
+                const h = self.draw_shown(frame, e.entity, shown, e.heading, pt, &layout_resolver, colour_map);
                 layout_resolver.submit(TextLabel.init(
                     name,
                     pt.x,

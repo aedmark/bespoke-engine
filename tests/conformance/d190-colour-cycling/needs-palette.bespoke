@@ -1,0 +1,5 @@
+# A colour cycle requires a declared palette.
+# pins: D-190
+# expect error: UnexpectedToken 5:1
+
+cycle "a" "b"

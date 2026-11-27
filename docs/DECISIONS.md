@@ -2365,6 +2365,18 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Corrupt `.bspk` packages and `.sav` files fail cleanly with named errors; games exceeding 65,535 bytes of bytecode or 32,767 bytes in one branch get a compile diagnostic rather than crashing. `loadPackageResealed` in `tests/fuzz.zig` steps two VM ticks after loading so mutated bytecode reaches execution.
 
+## D-190 Colour Cycling Uses Top-Level Code Lists, Forward Flow, Disjoint RGB Remapping, and an Optional 'CYCL' Package Section (2026-11-26, status: accepted; P49-01)
+
+**Context.** Classic parser and hybrid adventures animate water, fire, and lights by rotating palette colours on static art (`P49-01`). Because `D-182` stores decoded art as RGBA pixels in standard QOI streams, cycling needs a syntax, rotation direction, overlap rule, and a 1.0-compatible wire format.
+
+**Decision.**
+1. Top-level `cycle "a" "b" ... [every N]` lists two or more quoted `palette:` codes on one line; `every N` is optional (default `6` 60 Hz display frames, bounded `1..600`). `cycle` stays a non-reserved contextual word (matches only when followed by a quoted string on the same line).
+2. Rotation flows forward: at step `k = (clock / every) % colours.len`, a pixel originally painted with `colours[i]` draws `colours[(i + colours.len - k) % colours.len]`, so a highlight painted in `"a"` travels visually along `"a" -> "b" -> "c"`.
+3. Cycling requires a declared `palette:`, refuses index 0 (transparent), and refuses duplicate RGB values within a cycle or across two cycles (max `64` cycles, max `255` cycled colours in all). Cycles apply globally across all drawn art (backdrops, sprites, looks, parts), never to HUD or text.
+4. Packages store cycles in an optional `BSP1` section tagged `CYCL` with `flags = 0` (optional), so 1.0.0/1.0.1 readers skip it and render the static QOI art cleanly. Presentation-only: nothing enters `World`, saves, or rewinds.
+
+**Alternatives:** range syntax (`cycle "a" to "c"`); indented inside `palette:`; in-place next-colour rotation; per-scene scoping; true indexed CLUT cycling inside QOI or a second indexed image section (tabled for future consideration because it breaks standard QOI or 1.0 compatibility or reintroduces a second pixel representation).
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

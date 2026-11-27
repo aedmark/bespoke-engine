@@ -1,0 +1,19 @@
+# Colour cycling is presentation-only and adds no facts to the World.
+# pins: D-190
+# ticks: 2
+
+scene: Shore
+cast: Watcher
+marks: Rock
+palette:
+  "." transparent
+  "a" 10 20 30
+  "b" 40 50 60
+  "c" 70 80 90
+cycle "a" "b" "c" every 8
+image Wave:
+  "ab"
+  "ca"
+sprite Watcher: Wave
+routine Watch(Watcher):
+  wait 1 ticks

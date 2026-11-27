@@ -1767,3 +1767,54 @@ test "parser rejects statement nesting deeper than MAX_STMT_DEPTH" {
     try testing.expect(!res.is_valid);
     try testing.expectEqualStrings("NestingTooDeep", res.kind());
 }
+
+test "P49-01: colour cycles compile with explicit or default intervals and reject invalid declarations" {
+    const testing = std.testing;
+    const valid =
+        \\scene Shore:
+        \\  cast: Hero
+        \\  marks: Pier
+        \\palette:
+        \\  "." transparent
+        \\  "a" 10 20 30
+        \\  "b" 40 50 60
+        \\  "c" 70 80 90
+        \\  "d" 100 110 120
+        \\  "e" 130 140 150
+        \\cycle "a" "b" "c" every 8
+        \\cycle "d" "e"
+        \\entity Cycle
+        \\routine CycleCheck(Cycle):
+        \\  wait 1 ticks
+    ;
+    var world = try World.init(testing.allocator, world_mod.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compile_source(testing.allocator, &world, &spatial, valid);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.art.cycles.len);
+    try testing.expectEqual(@as(u16, 8), compiled.art.cycles[0].every);
+    try testing.expectEqual(@as(usize, 3), compiled.art.cycles[0].colours.len);
+    try testing.expectEqual(@as(u16, image_mod.DEFAULT_CYCLE_INTERVAL), compiled.art.cycles[1].every);
+    try testing.expectEqual(@as(usize, 2), compiled.art.cycles[1].colours.len);
+
+    const Case = struct { src: []const u8, line: u32, needle: []const u8 };
+    const cases = [_]Case{
+        .{ .src = "cycle \"a\" \"b\"\n", .line = 1, .needle = "palette:" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\ncycle \"a\"\n", .line = 4, .needle = "at least two" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\ncycle \"a\" \"z\"\n", .line = 4, .needle = "does not declare" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\ncycle \".\" \"a\"\n", .line = 4, .needle = "transparent" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\n  \"b\" 1 2 3\ncycle \"a\" \"b\"\n", .line = 5, .needle = "repeats colour" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\n  \"b\" 4 5 6\n  \"c\" 7 8 9\ncycle \"a\" \"b\"\ncycle \"b\" \"c\"\n", .line = 7, .needle = "repeats colour" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\n  \"b\" 4 5 6\ncycle \"a\" \"b\" every 0\n", .line = 5, .needle = "1 to 600" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\n  \"b\" 4 5 6\ncycle \"a\" \"b\" every 601\n", .line = 5, .needle = "1 to 600" },
+        .{ .src = "palette:\n  \".\" transparent\n  \"a\" 1 2 3\n  \"b\" 4 5 6\ncycle \"a\" \"b\" extra\n", .line = 5, .needle = "optional 'every <N>'" },
+    };
+    for (cases) |c| {
+        const res = check_source(testing.allocator, c.src);
+        try testing.expect(!res.is_valid);
+        try testing.expectEqual(c.line, res.line);
+        try testing.expect(std.mem.indexOf(u8, res.message(), c.needle) != null);
+    }
+}

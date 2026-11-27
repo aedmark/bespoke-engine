@@ -7,6 +7,7 @@ const max_input = 4096;
 const script = @embedFile("fixtures/fuzz/room.bespoke");
 const values = @embedFile("fixtures/fuzz/values.bespoke");
 const package = @embedFile("fixtures/compat/format-1-package.bspk");
+const cycles_package = @embedFile("fixtures/compat/format-1-cycles.bspk");
 const dice_save = @embedFile("fixtures/compat/format-1-save-dice.sav");
 const each_save = @embedFile("fixtures/compat/format-1-save-each.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
@@ -175,7 +176,7 @@ fn loadPackageResealed(allocator: std.mem.Allocator, input: []const u8) !bool {
 }
 
 test "P48-17 package loader past its checksum" {
-    try campaign(loadPackageResealed, &.{package});
+    try campaign(loadPackageResealed, &.{ package, cycles_package });
 }
 
 test "P39-01 save loader" {

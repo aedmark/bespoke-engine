@@ -355,6 +355,10 @@ pub const Canvas = struct {
     /// `img` must be valid (`image.Art.validate`), as every image from a package is, so alpha
     /// is 0 or 255 and no blending is needed; `frame` must be below `img.frame_count()`.
     pub fn draw_image(self: *Canvas, img: *const image.Image, frame: u32, x: i32, y: i32) void {
+        self.draw_image_cycled(img, frame, x, y, null);
+    }
+
+    pub fn draw_image_cycled(self: *Canvas, img: *const image.Image, frame: u32, x: i32, y: i32, colour_map: ?*const image.ColourMap) void {
         std.debug.assert(frame < img.frame_count());
         const s: i32 = image.SCALE;
         const fw: i32 = img.frame_width;
@@ -376,8 +380,9 @@ pub const Canvas = struct {
             if (py0 >= py1) continue;
             var ax = ax0;
             while (ax < ax1) : (ax += 1) {
-                const c = img.frame_pixel(frame, @intCast(ax), @intCast(ay));
+                var c = img.frame_pixel(frame, @intCast(ax), @intCast(ay));
                 if (c.a == 0) continue;
+                if (colour_map) |map| c = map.remap(c);
                 const px0 = @max(0, x + ax * s);
                 const px1 = @min(self.width, x + ax * s + s);
                 if (px0 >= px1) continue;
@@ -622,4 +627,48 @@ test "P48-21: draw_text renders accented Latin glyphs distinctly and keeps place
     lambda_cv.draw_text("\xce\xbb", 2, 2, 1, Color.white);
     plain_q_cv.draw_text("?", 2, 2, 1, Color.white);
     try testing.expectEqual(plain_q_cv.hash(), lambda_cv.hash());
+}
+
+test "P49-01: draw_image_cycled rotates cycled palette pixels forward and keeps uncycled and transparent pixels untouched" {
+    const a = image.Colour{ .r = 10, .g = 20, .b = 30 };
+    const b = image.Colour{ .r = 40, .g = 50, .b = 60 };
+    const c = image.Colour{ .r = 70, .g = 80, .b = 90 };
+    const fixed = image.Colour{ .r = 200, .g = 210, .b = 220 };
+    const palette = [_]image.Colour{ .{ .r = 0, .g = 0, .b = 0 }, a, b, c, fixed };
+    const pixels = comptime image.from_indices(&palette, &.{ 1, 2, 3, 4, 0, 1, 2, 3 });
+    const img = image.Image{ .name = "Wave", .width = 4, .height = 2, .frame_width = 4, .frame_height = 2, .pixels = &pixels };
+    const cycle = image.ColourCycle{ .colours = &.{ a, b, c }, .every = 8 };
+
+    var buf: [16 * 8 * 4]u8 = undefined;
+    var cv = Canvas.init(&buf, 16, 8);
+    var probe = RectProbe{};
+    cv.rect_probe = &probe;
+
+    // Clock 0: identity.
+    cv.clear(Color.black);
+    const map0 = image.ColourMap.from_cycles(&.{cycle}, 0);
+    cv.draw_image_cycled(&img, 0, 0, 0, &map0);
+    try testing.expectEqual(Color{ .r = a.r, .g = a.g, .b = a.b }, cv.get_pixel(0, 0));
+    try testing.expectEqual(Color{ .r = fixed.r, .g = fixed.g, .b = fixed.b }, cv.get_pixel(12, 0));
+    try testing.expectEqual(Color.black, cv.get_pixel(0, 4));
+    const bounds0 = probe.draws[0];
+
+    // Clock 8: step 1 shifts a -> b -> c -> a (pixel 0 gets c, pixel 1 gets a, pixel 2 gets b).
+    probe.count = 0;
+    cv.clear(Color.black);
+    const map8 = image.ColourMap.from_cycles(&.{cycle}, 8);
+    cv.draw_image_cycled(&img, 0, 0, 0, &map8);
+    try testing.expectEqual(Color{ .r = c.r, .g = c.g, .b = c.b }, cv.get_pixel(0, 0));
+    try testing.expectEqual(Color{ .r = a.r, .g = a.g, .b = a.b }, cv.get_pixel(4, 0));
+    try testing.expectEqual(Color{ .r = b.r, .g = b.g, .b = b.b }, cv.get_pixel(8, 0));
+    try testing.expectEqual(Color{ .r = fixed.r, .g = fixed.g, .b = fixed.b }, cv.get_pixel(12, 0));
+    try testing.expectEqual(Color.black, cv.get_pixel(0, 4));
+    try testing.expectEqual(bounds0.w, probe.draws[0].w);
+    try testing.expectEqual(bounds0.h, probe.draws[0].h);
+
+    // Clock 24: wraps back to identity.
+    cv.clear(Color.black);
+    const map24 = image.ColourMap.from_cycles(&.{cycle}, 24);
+    cv.draw_image_cycled(&img, 0, 0, 0, &map24);
+    try testing.expectEqual(Color{ .r = a.r, .g = a.g, .b = a.b }, cv.get_pixel(0, 0));
 }

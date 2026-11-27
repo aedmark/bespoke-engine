@@ -3138,3 +3138,91 @@ test "WasmRuntime.init_in_place binds internal pointers without bind() and clean
     defer testing.allocator.destroy(bad_rt);
     try testing.expectError(error.OutOfMemory, bad_rt.init_in_place(testing.allocator, &fail_decks, 0, pixels, dice_mod.DEFAULT_SEED));
 }
+
+test "P49-01: desktop and browser draw identical cycled frames and leave world and saves unchanged" {
+    const testing = std.testing;
+    const row = "  \"" ++ &@as([320]u8, @splat('a')) ++ "\"\n";
+    const rows = comptime blk: {
+        var acc: []const u8 = "";
+        for (0..180) |_| acc = acc ++ row;
+        break :blk acc;
+    };
+    const script =
+        \\scene TidePool:
+        \\  cast: Hero
+        \\  marks: Rock
+        \\  backdrop: PoolBg
+        \\palette:
+        \\  "." transparent
+        \\  "a" 10 20 30
+        \\  "b" 40 50 60
+        \\  "c" 70 80 90
+        \\cycle "a" "b" "c" every 8
+        \\image PoolBg:
+        \\
+    ++ rows ++
+        \\image HeroDot:
+        \\  "bb"
+        \\  "bb"
+        \\sprite Hero: HeroDot
+        \\routine Wait(Hero):
+        \\  wait 1 ticks
+    ;
+    const decks = [_]Deck{script_deck("POOL", script)};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    rt.bind();
+
+    var desktop = try renderer.DisplayWindow.init_offscreen(testing.io, CANVAS_WIDTH, CANVAS_HEIGHT);
+    defer desktop.deinit();
+
+    const facts0 = rt.world.fact_count();
+    var buf0: [65536]u8 = undefined;
+    var w0: std.Io.Writer = .fixed(&buf0);
+    try rt.world.save_state(&w0);
+
+    var hashes: [2]u64 = undefined;
+    for ([_]u64{ 0, 8 }, 0..) |clock, idx| {
+        rt.window.animation_clock = clock;
+        rt.render_frame();
+        const browser_hash = std.hash.Wyhash.hash(0, rt.framebuffer);
+        hashes[idx] = browser_hash;
+
+        const frame = rt.capture();
+        const shown = rt.screen(frame);
+        desktop.theme = shown.theme;
+        desktop.art = shown.art;
+        desktop.animation_clock = shown.animation_clock;
+        desktop.footer_text = shown.footer_text;
+        desktop.backdrop_color = shown.backdrop_color;
+        desktop.active_verb = shown.active_verb;
+        desktop.messages = shown.messages;
+        desktop.cue_banner_text = shown.cue_banner_text;
+        desktop.cue_banner_len = shown.cue_banner_len;
+        desktop.log_text = shown.log_text;
+        desktop.log_len = shown.log_len;
+        desktop.log_count = shown.log_count;
+        desktop.command_bar_enabled = shown.command_bar_enabled;
+        desktop.command_bar_focused = shown.command_bar_focused;
+        desktop.command_input = shown.command_input;
+        desktop.command_len = shown.command_len;
+        desktop.render_frame(frame, rt.is_paused);
+        try testing.expectEqual(browser_hash, desktop.frame_hash().?);
+        try testing.expectEqualSlices(u8, desktop.canvas.?.pixels, rt.framebuffer);
+        const px = rt.pixel(20, 120);
+        if (clock == 0) {
+            try testing.expectEqual(RgbaColor{ .r = 10, .g = 20, .b = 30, .a = 255 }, px);
+        } else {
+            try testing.expectEqual(RgbaColor{ .r = 70, .g = 80, .b = 90, .a = 255 }, px);
+        }
+    }
+    try testing.expect(hashes[0] != hashes[1]);
+
+    try testing.expectEqual(facts0, rt.world.fact_count());
+    var buf8: [65536]u8 = undefined;
+    var w8: std.Io.Writer = .fixed(&buf8);
+    try rt.world.save_state(&w8);
+    try testing.expectEqualSlices(u8, w0.buffered(), w8.buffered());
+}

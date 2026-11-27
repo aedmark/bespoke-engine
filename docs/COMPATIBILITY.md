@@ -25,6 +25,7 @@ A package is a 16-byte header (magic, format, a CRC32 of the payload, and the pa
 | `IMGS` | images, as QOI streams (D-182) |
 | `ARTB` | backdrops, sprites, areas, looks, and parts |
 | `TEXT` | display names and phrase overrides (D-179) |
+| `CYCL` | optional (`flags = 0`): palette colour cycles (P49-01, D-190); 1.0 readers skip it and render static QOI art |
 
 - A package writes only the sections its program uses; `NAME` and `CODE` are always present. Every 1.0 section is required.
 - A reader refuses a package with an unknown required section (`UnknownRequiredSection`) and skips an unknown optional one, so a later 1.x adds what it needs as a new section, optional where an older reader may safely ignore it, without a new format.
@@ -47,6 +48,6 @@ Readers reject a file they cannot read before allocating for or changing decoded
 
 ## Compatibility fixtures
 
-The 1.0 files live in `tests/fixtures/compat/` (`format-1-package.bspk` with its script `format-1.bespoke`, `format-1-save-dice.sav`, and `format-1-save-each.sav`). Tests and the fuzzer load them without rewriting them. When a 1.x release adds a section or a save version, add a fixture that uses it, and keep every earlier one. The fixtures from before 1.0 were retired with their readers (D-174); git history keeps them.
+The 1.0 files live in `tests/fixtures/compat/` (`format-1-package.bspk` with its script `format-1.bespoke`, `format-1-save-dice.sav`, and `format-1-save-each.sav`), joined in 1.x by `format-1-cycles.bspk` (`format-1-cycles.bespoke`, `CYCL`, P49-01). Tests and the fuzzer load them without rewriting them. When a 1.x release adds a section or a save version, add a fixture that uses it, and keep every earlier one. The fixtures from before 1.0 were retired with their readers (D-174); git history keeps them.
 
 Decisions D-172, D-174, and D-187 own the policy. `src/package.zig` and `src/save.zig` own the executable checks.

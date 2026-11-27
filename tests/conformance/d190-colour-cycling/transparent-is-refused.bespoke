@@ -1,0 +1,8 @@
+# Palette index 0 (transparent) cannot be cycled.
+# pins: D-190
+# expect error: UnexpectedToken 8:7
+
+palette:
+  "." transparent
+  "a" 10 20 30
+cycle "." "a"
