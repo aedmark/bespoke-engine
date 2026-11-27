@@ -49,12 +49,12 @@ python3 tools/build_site.py --check
 python3 tools/check_web_budgets.py
 ```
 
-Use `--lantern-page /path/to/index.html` to include a freshly packed Lantern Watch export. CI always includes that page.
+Use `--lantern-page /path/to/index.html` to include a freshly packed Lantern Watch export (`site/sunken-vault.html`, `site/harbour.html`, and the nineteen standalone proof pages are always checked). CI also includes Lantern Watch.
 
 | Artifact | Limit per file |
 | --- | ---: |
 | Engine and proof WebAssembly modules | 1.5 MiB (D-159) |
 | Showcase `site/index.html` | 1.25 MiB |
-| Individual proof pages and Lantern Watch | 2 MiB (D-157) |
+| Individual proof pages, Harbour, Sunken Vault, and Lantern Watch | 2 MiB (D-157) |
 
 Limits are raw file bytes, before HTTP compression. Standalone HTML counts its embedded module; that makes it possible to detect growth in both the module and the export wrapper. A page embeds the module as base64, so the page budget of 2 MiB carries a module of up to 1.5 MiB, the module limit (D-141, D-157, D-159). Missing files and files over budget fail the check. [The budget manifest](../tools/web_budgets.json) is the single source of limits (D-115).

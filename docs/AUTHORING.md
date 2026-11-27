@@ -28,6 +28,8 @@ zig build run
 | `build.zig`, `build.zig.zon` | The build; the engine is a relative path dependency |
 | `LICENSE-BeSpoke` | The BeSpoke MIT notice for the engine and copied starter files |
 
+Pass `--template text` (`bespoke init <name> --template text`) for a turn-based parser adventure with a transcript, command field, hint button, and optional animated room picture (`P49-02`, `D-191`).
+
 No project-wide license is generated. Choose a license for your own contributions and keep
 `LICENSE-BeSpoke` with distributions that include the engine or substantial portions of it (D-120).
 
@@ -346,7 +348,7 @@ Each of these is a declaration a script carries; [`script_spec.md`](script_spec.
 | Duels | `duel` | Insult or riddle contests with tiers and fatigue |
 | Degradation | `degradation` | Containers whose contents age, spill, and fail |
 | Scores | `score` | Four-part music in Music Macro Language |
-| Pixel art | `palette`, `image`, `backdrop`, `sprite`, `area` | Rooms, people, and props drawn from PNG files or typed rows |
+| Pixel art | `palette`, `cycle`, `image`, `backdrop`, `sprite`, `area` | Rooms, people, and props drawn from PNG files or typed rows, with optional 60 Hz palette colour cycling |
 
 A `goal` declares what the player must make true and what to say when they ask for help. Knowledge is script-asserted: `Knows` and `Believes` facts about the player are what the character could reason about, and `Rejects` cancels either (P44-01, D-134).
 
@@ -432,6 +434,7 @@ on cue Uses(Player, Lamp):
 ```
 
 - `part Flame of Lamp at 0 -14` draws the flame's sprite above the lamp, offset in art pixels from the lamp's bottom centre; a click on the flame acts on the lamp. A prop with both a sprite and an area draws at the area's top-left. `proofs/art/lamplighter/lamplighter.bespoke` lights its lamps this way.
+- Palette colour cycling (`P49-01`, `D-190`): declare a `palette:` and list `cycle "w1" "w2" "w3" every 6` (2 or more quoted palette codes, optional `every N` display frames from `1` to `600`, default `6`) at top level to rotate those colours forward at 60 Hz across all drawn art without touching `World` state. Cycles are stored in an optional `CYCL` package section that 1.0 readers skip cleanly; see `proofs/art/tide_beacon/tide_beacon.bespoke` and `scenarios/sunken_vault/main.bespoke`.
 
 ### The engine's relations
 

@@ -21,8 +21,8 @@
     ],
     "footer": "BeSpoke Engine {{project.version}} · Engine-as-Spine Narrative Simulation · Zero External Dependencies",
     "reviewed": {
-      "date": "2026-11-26",
-      "commit": "194c171",
+      "date": "2026-11-27",
+      "commit": "67d5371",
       "by": "BeSpoke Core Team",
       "interval_days": 180
     }
@@ -1078,6 +1078,7 @@
             "src/png.zig decodes PNG files with the standard library's inflate under size limits, and src/art_import.zig keeps each pixel's colour with binary alpha; a partly transparent pixel, or a colour a declared palette lacks, is refused. Only a command-line compile reads files, from the script's folder, and the decoder is compiled out of the browser module.",
             "Canvas.draw_image paints each art pixel as a 4x4 block, skips transparent pixels, clips at the edges, and records its opaque bounds for the band check, on the same path for the desktop window and the browser.",
             "Sprite.frame_at picks the frame from the display's 60 Hz animation clock and the entity's heading; animation is never written to the world, so saves, rewinds, and goldens are unaffected by it.",
+            "Top-level cycle \"c1\" \"c2\" ... [every N] rotates declared palette: colours forward every N 60 Hz display frames across drawn art without touching World state, stored in an optional CYCL package section that 1.0 readers skip cleanly (P49-01, D-190).",
             "Hit tests take the art: a sprite is hit anywhere in its frame or on its spot's disc, and an area anywhere in its rectangle; box outlines are drawn only in the debug overlay.",
             "Packages carry images, as standard QOI streams with no palette (src/qoi.zig), and their backdrops, sprites, areas, looks, and parts; QOI took The Lamplighter's Round's package from 127,001 to 33,989 bytes."
           ],
@@ -1091,6 +1092,7 @@
             {"label": "Architectural Decision D-166", "target": "docs/DECISIONS.md#d-166", "kind": "decision"},
             {"label": "Architectural Decision D-181", "target": "docs/DECISIONS.md#d-181", "kind": "decision"},
             {"label": "Architectural Decision D-182", "target": "docs/DECISIONS.md#d-182", "kind": "decision"},
+            {"label": "Architectural Decision D-190", "target": "docs/DECISIONS.md#d-190", "kind": "decision"},
             {"label": "QOI Codec", "target": "src/qoi.zig", "kind": "source"},
             {"label": "Image and Art Model", "target": "src/image.zig", "kind": "source"},
             {"label": "PNG Decoder", "target": "src/png.zig", "kind": "source"},
@@ -1110,7 +1112,8 @@
             "zig build web builds src/web.zig for wasm32-freestanding against the engine module (no libc or SDL there) with the same package, and installs it with web/index.html into zig-out/web/.",
             "wasm.script_deck loads the package, starts it with host.start_script, ticks through host.tick, shows speech and choices in the banner, and lets the number keys answer an open dialogue.",
             "The workflow fetches the engine at BESPOKE_ENGINE_REF beside the game, rewrites .path in build.zig.zon, installs SDL2 per platform, tests, builds and runs the bundled release headless, and smoke-tests the browser build with Node.",
-            "zig build test-template in the engine generates a project into the cache and runs its tests, bundled build, and web build."
+            "bespoke init <name> --template text generates a turn-based parser starter (clock: turns) with a transcript, command field, hint button, AudioWorklet sound, and optional animated room picture (P49-02, D-191).",
+            "zig build test-template in the engine generates both stage and text projects into the cache and runs their tests, bundled build, and web builds."
           ],
           "why": "A starter that only builds on the author's machine teaches the wrong habit. Compiling the script at build time catches script errors before release and gives one file to ship, and running the same package in the browser keeps the web version in step with the native one.",
           "why_basis": "recorded",
@@ -1283,7 +1286,7 @@
             "bespoke compile lowers narrative DSL text directly to standalone sectioned binary asset packages (.bspk) with magic header BSP1 format 1, tagged length-prefixed sections, and CRC32 payload verification (D-187).",
             "bespoke run executes either text scripts or compiled packages in headless simulation mode (with --input, --facts, and --seed) or full 60 Hz SDL2 graphical mode.",
             "The asset loader validates section tags, header magic, version, payload checksum, and element bounds before allocation, protecting host boundaries from corrupt packages.",
-            "bespoke init <name> writes a standalone game project from embedded templates: a build that depends on this engine checkout by relative path, a host, a starter script, and tests (P29-01, D-063)."
+            "bespoke init <name> [--template stage|text] writes a standalone game project from embedded templates: a build that depends on this engine checkout by relative path, a host, a starter script, and tests (P29-01, D-063, D-191)."
           ],
           "why": "Narrative authors require a decoupled toolchain where content can be written, validated in CI, packaged, and distributed without touching the engine's core Zig code.",
           "why_basis": "recorded",
@@ -1405,9 +1408,9 @@
           "id": "showcase-gallery-and-viewer",
           "title": "Showcase Gallery and the Standalone Proof Pages",
           "summary": "The showcase lists every proof, and each card opens that proof's own standalone page, which plays its deck in the browser.",
-          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html, site/harbour.html, and eighteen proof site/*.html pages",
+          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html, site/harbour.html, site/sunken-vault.html, and nineteen proof site/*.html pages",
           "tags": ["site", "gallery", "standalone", "diagrams"],
-          "what": "A generated gallery of eighteen proof cards, each linking to a standalone page that plays one deck, The Harbour on the homepage and site/harbour.html, and a How It Works section of three inline SVG diagrams. Each page carries its own how-to-play notes, walkthrough, and keys.",
+          "what": "A generated gallery of nineteen proof cards, each linking to a standalone page that plays one deck, The Harbour and The Sunken Vault on the homepage and their own pages, and a How It Works section of three inline SVG diagrams. Each page carries its own how-to-play notes, walkthrough, and keys.",
           "how": [
             "build_site.py reads tools/site_gallery.json and writes one card per proof, linking the page and deck that entry names.",
             "Each page is a checked-in HTML file with the generated-region markers; build_site.py embeds tools/engine_audio.js, tools/proof_page.js, and bespoke-proofs.wasm into it.",
@@ -1456,15 +1459,15 @@
           "summary": "Zero-dependency wasm32-freestanding runtime that draws the desktop window's frame, with a browser event bridge; games supply its scenes as decks.",
           "synopsis": "zig build wasm wasm-proofs | wasm_init(deck); wasm_step_tick(); wasm_render_frame(); wasm_on_pointer_down(x, y); wasm_set_verb(i);",
           "tags": ["wasm", "browser", "canvas", "events", "runtime", "framebuffer"],
-          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 1280x720 RGBA8888 framebuffer and a browser mouse/keyboard/touch event bridge. It draws the same frame as the desktop window, with the same code and the wider 5x7 Latin font (D-179). What is on stage comes from a deck table the host compiles in: the engine's own module has a neutral demo deck and a script deck, and bespoke-proofs.wasm carries eighteen proof decks, and a deck can turn on the desktop's typed-command bar.",
+          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 1280x720 RGBA8888 framebuffer and a browser mouse/keyboard/touch event bridge. It draws the same frame as the desktop window, with the same code and the wider 5x7 Latin font (D-179). What is on stage comes from a deck table the host compiles in: the engine's own module has a neutral demo deck and a script deck, and bespoke-proofs.wasm carries nineteen proof decks, and a deck can turn on the desktop's typed-command bar.",
           "how": [
             "The runtime captures the desktop RenderFrame and draws it with a DisplayWindow made by init_canvas into a 1280x720x4 RGBA8888 buffer in linear memory (D-097): the deck's theme draws its proof's scenery, and the window draws the verb bar, item tray, dialogue panel, banners, and timeline. The desktop draws into the same Canvas (src/display/canvas.zig) and SDL only shows it, so the two match pixel for pixel.",
-            "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots under a 16 MiB capped allocator. Each Deck supplies load, after-tick, and catalyst callbacks, a theme, and a status hook, and wasm.export_runtime(decks) emits the 21 supported C-ABI browser exports (including wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick, wasm_hint, wasm_decision, wasm_dilemma, and wasm_known_value; D-175, D-176).",
+            "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots under a 16 MiB capped allocator. Each Deck supplies load, after-tick, and catalyst callbacks, a theme, and a status hook, and wasm.export_runtime(decks) emits the 23 supported C-ABI browser exports (including wasm_init, wasm_step_tick, wasm_set_animation_clock, wasm_submit_command, wasm_framebuffer_ptr, wasm_scrub_to_tick, wasm_hint, wasm_decision, wasm_dilemma, and wasm_known_value; D-175, D-176, D-191).",
             "dispatch_event normalizes browser pointer_down, pointer_move, right_click, key_down, and touch events into walk_to motor intents, verb selection, cue firing, item use, catalyst triggers, [H] hint steps, and timeline scrubbing, hit-testing with the desktop layout.",
             "The engine synthesizer plays in the browser (D-071): the runtime's AudioBridge renders the script's scores or a deck's soundtrack, and the page pulls stereo samples with wasm_audio_render into Web Audio. A deck can own a TemporalHypervisor whose live branch the VM, story, and inspector follow and the timeline records; draft decks play notes on C to B.",
             "I opens the state inspector (D-070, D-098): the desktop State tab itself, drawn in the save drawer's place, with the clock paused and the desktop's keys (including E for # engine relations) sent as DOM key codes.",
             "Script decks (wasm.script_deck_with) compile a game's or a proof's script in the browser, start it with host.start_script, and tick through host.tick. Verbs on people and props fire LooksAt, TalksTo, Takes, or Uses for the deck's player; the number keys answer an open dialogue; the stage shows only the current scene, as on desktop (D-066, D-069).",
-            "The showcase gives each proof its own page (D-122); build_site.py embeds bespoke-proofs.wasm into all eighteen via tools/proof_page.js. The homepage loads no proof runtime. tools/wasm_smoke.js exercises both modules in Node."
+            "The showcase gives each proof its own page (D-122); build_site.py embeds bespoke-proofs.wasm into all nineteen via tools/proof_page.js. The homepage loads no proof runtime. tools/wasm_smoke.js exercises both modules in Node."
           ],
           "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required). Drawing both surfaces through one canvas means a game's art and interface are written once (D-097). Decks keep game content out of the engine module (D-042), and the interactive simulator lives on the public showcase site rather than inside the reference manual (D-047).",
           "why_basis": "recorded",

@@ -1198,6 +1198,7 @@
 
       <nav class="nav-links">
         <a href="#playground">The Harbour</a>
+        <a href="#sunken-vault">The Sunken Vault</a>
         <a href="#tenets">Tenets</a>
         <a href="#scenarios">Proofs</a>
         <a href="#dialogue">Dialogue</a>
@@ -1231,6 +1232,9 @@
       <div class="hero-buttons">
         <a href="#playground" class="btn-primary">
           <span>[►]</span> Play The Harbour
+        </a>
+        <a href="sunken-vault.html" class="btn-secondary">
+          <span>[►]</span> Play The Sunken Vault
         </a>
         <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener" class="btn-secondary">
           <span>[★]</span> Star on GitHub ↗
@@ -1736,7 +1740,7 @@
           <tr>
             <td>Who owns <code>main()</code>?</td>
             <td>Graphics pipeline &amp; frame-rate render loop</td>
-            <td><span class="badge-yes">The simulation, one whole tick at a time (1 per second by default; the display redraws at 60 Hz)</span></td>
+            <td><span class="badge-yes">The simulation, one whole tick at a time (1 per second by default or per resolved turn with <code>clock: turns</code>; the display redraws at 60 Hz)</span></td>
           </tr>
           <tr>
             <td>World State Representation</td>
