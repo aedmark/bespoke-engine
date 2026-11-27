@@ -102,6 +102,8 @@ class GalleryTests(unittest.TestCase):
     def test_homepage_mounts_only_harbour_and_links_every_proof_page(self):
         homepage = build_site.HTML_PATH.read_text(encoding="utf-8")
         self.assertEqual(['harbour.html'], re.findall(r'<iframe[^>]+src="([^"]+)"', homepage))
+        self.assertIn('href="sunken-vault.html"', homepage)
+        self.assertTrue(build_site.SUNKEN_VAULT_PATH.is_file())
         self.assertLess(homepage.index('id="harbour-demo"'), homepage.index('id="scenarios"'))
         self.assertNotIn(build_site.START_MARKER, homepage)
         self.assertNotIn("proof-lab", homepage)

@@ -23,15 +23,28 @@ def replace_once(text: str, old: str, new: str) -> str:
     return text.replace(old, new, 1)
 
 
-def build(output: Path, browser_check: bool) -> None:
-    if output.suffix != ".html" or output.exists():
+def build(output: Path, browser_check: bool, force: bool = False) -> None:
+    if output.suffix != ".html":
         raise ValueError("choose a new .html output path")
+    if output.exists():
+        if not force:
+            raise ValueError("choose a new .html output path")
+        output.unlink()
     run("zig", "build", "-j2", cwd=ROOT)
     cli = ROOT / "zig-out" / "bin" / "bespoke"
     with tempfile.TemporaryDirectory(prefix="bespoke-sunken-vault-") as tmp:
         work = Path(tmp)
         run(cli, "init", "sunken_vault", "--template", "text", "--engine", ROOT, cwd=work)
         project = work / "sunken_vault"
+        build_zig = project / "build.zig"
+        build_zig.write_text(
+            replace_once(
+                build_zig.read_text(encoding="utf-8"),
+                "            .optimize = .ReleaseSmall,\n        }),",
+                "            .optimize = .ReleaseSmall,\n            .strip = true,\n        }),",
+            ),
+            encoding="utf-8",
+        )
         shutil.copyfile(GAME / "main.bespoke", project / "scripts" / "main.bespoke")
         for png in sorted((GAME / "art").glob("*.png")):
             shutil.copyfile(png, project / "scripts" / png.name)
@@ -62,9 +75,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="new HTML file for the packed standalone build")
     parser.add_argument("--chrome", action="store_true", help="also verify the packed HTML in Chrome")
+    parser.add_argument("--force", action="store_true", help="overwrite an existing output file")
     args = parser.parse_args()
     try:
-        build(args.output.resolve(), args.chrome)
+        build(args.output.resolve(), args.chrome, args.force)
     except (OSError, ValueError, subprocess.CalledProcessError) as err:
         parser.exit(1, f"Sunken Vault build failed: {err}\n")
 

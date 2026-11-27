@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 HTML_PATH = ROOT / "site" / "index.html"
 HARBOUR_PATH = ROOT / "site" / "harbour.html"
 HARBOUR_ARTIFACT = ROOT / "zig-out" / "harbour" / "index.html"
+SUNKEN_VAULT_PATH = ROOT / "site" / "sunken-vault.html"
+SUNKEN_VAULT_ARTIFACT = ROOT / "zig-out" / "sunken-vault" / "index.html"
 # The standalone proof pages (D-086, D-094, D-122): one deck each, a shared wrapper, the same module.
 PROOF_PAGE_NAMES = (
     "tavern.html",
@@ -147,6 +149,15 @@ def load_harbour(path: Path = HARBOUR_ARTIFACT) -> str:
         raise SystemExit(f"Harbour page not found at {path}; run `zig build harbour` first") from exc
 
 
+def load_sunken_vault(path: Path = SUNKEN_VAULT_ARTIFACT) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise SystemExit(
+            f"Sunken Vault page not found at {path}; run `python3 tools/build_sunken_vault.py --force zig-out/sunken-vault/index.html` first"
+        ) from exc
+
+
 def render_proof_page(html: str) -> str:
     """A standalone proof page rendered from the current module (D-086, D-094, D-122)."""
     return render_page(html, PROOF_PAGE_JS_PATH.read_text(encoding="utf-8"), load_wasm(), PROOF_PAGE_JS_PATH)
@@ -164,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         rendered.append((path, html, render(html)))
     inside = HARBOUR_PATH.read_text(encoding="utf-8") if HARBOUR_PATH.exists() else None
     rendered.append((HARBOUR_PATH, inside, load_harbour()))
+    sunken = SUNKEN_VAULT_PATH.read_text(encoding="utf-8") if SUNKEN_VAULT_PATH.exists() else None
+    rendered.append((SUNKEN_VAULT_PATH, sunken, load_sunken_vault()))
 
     if args.check:
         stale = [path for path, html, page in rendered if page != html]

@@ -57,14 +57,14 @@ jobs:
         timeout-minutes: 8
         env:
           CHROME: google-chrome
-        run: python3 tools/build_sunken_vault.py --chrome "$RUNNER_TEMP/sunken-vault/index.html"
+        run: python3 tools/build_sunken_vault.py --chrome --force zig-out/sunken-vault/index.html
       - name: Build and smoke-test WebAssembly
         run: |
           zig build wasm wasm-proofs
           node tools/wasm_smoke.js
           python3 tools/package_browser_release.py
       - name: Check browser size budgets (P41-01)
-        run: python3 tools/check_web_budgets.py --lantern-page "$RUNNER_TEMP/lantern-watch/index.html" --sunken-vault-page "$RUNNER_TEMP/sunken-vault/index.html"
+        run: python3 tools/check_web_budgets.py --lantern-page "$RUNNER_TEMP/lantern-watch/index.html"
       - name: Measure simulation on Linux and in Chrome (P41-01)
         timeout-minutes: 5
         env:
