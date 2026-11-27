@@ -8,8 +8,10 @@ import sys
 
 if __package__:
     from .build_site import HARBOUR_PATH, HTML_PATH, PROOF_PAGE_PATHS, ROOT, SUNKEN_VAULT_PATH
+    from .build_studio import STUDIO_PATH
 else:
     from build_site import HARBOUR_PATH, HTML_PATH, PROOF_PAGE_PATHS, ROOT, SUNKEN_VAULT_PATH
+    from build_studio import STUDIO_PATH
 
 
 def check_sizes(entries: list[tuple[Path, int]]) -> bool:
@@ -35,11 +37,12 @@ def main() -> int:
     parser.add_argument("--sunken-vault-page", type=Path, help="also check a freshly built Sunken Vault export")
     args = parser.parse_args()
     budgets = json.loads(Path(__file__).with_name("web_budgets.json").read_text(encoding="utf-8"))
-    modules = [ROOT / "zig-out" / "bin" / name for name in ("bespoke.wasm", "bespoke-proofs.wasm")]
+    modules = [ROOT / "zig-out" / "bin" / name for name in ("bespoke.wasm", "bespoke-proofs.wasm", "bespoke-studio.wasm")]
     entries = [(p, budgets["wasmModuleBytes"]) for p in modules]
     entries.append((HTML_PATH, budgets["showcasePageBytes"]))
     entries.append((HARBOUR_PATH, budgets["standalonePageBytes"]))
     entries.append((SUNKEN_VAULT_PATH, budgets["standalonePageBytes"]))
+    entries.append((STUDIO_PATH, budgets["standalonePageBytes"]))
     entries.extend((p, budgets["standalonePageBytes"]) for p in PROOF_PAGE_PATHS)
     if args.lantern_page is not None:
         entries.append((args.lantern_page, budgets["standalonePageBytes"]))

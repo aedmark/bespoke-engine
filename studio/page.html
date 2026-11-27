@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>BeSpoke Studio</title>
+<!-- Source: studio/page.html, studio/windows.js, studio/studio.js. Built into site/studio.html
+     by tools/build_studio.py (P47-01, D-192); edit the sources, not the built page. -->
+<style>
+  /* Seven pens, BeSpoke's own (D-192 item 3). Every size is a multiple of --px, one font
+     pixel, so the whole workspace scales by integer steps with the 5x7 face (item 7). On a
+     touch screen or a narrow window --touch lifts every gadget to the 44 px rule (item 6). */
+  :root {
+    --px: 2px;
+    --touch: 0px;
+    --pen-back: #a9a398;
+    --pen-shine: #f4f0e4;
+    --pen-shadow: #1c1b1f;
+    --pen-fill: #3a6690;
+    --pen-filltext: #f4f0e4;
+    --pen-text: #1c1b1f;
+    --pen-mark: #d0602a;
+    --bar: calc(11 * var(--px));
+    --rowh: calc(9 * var(--px));
+    --gad: max(calc(11 * var(--px)), var(--touch));
+    --out: inset var(--px) var(--px) 0 var(--pen-shine), inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--pen-shadow);
+    --in: inset var(--px) var(--px) 0 var(--pen-shadow), inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--pen-shine);
+    --stipple: repeating-conic-gradient(var(--pen-shadow) 0 25%, transparent 0 50%) 0 0 / calc(2 * var(--px)) calc(2 * var(--px));
+  }
+  @media (max-width: 700px), (pointer: coarse) { :root { --touch: 44px; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--pen-shadow); }
+  body { color: var(--pen-text); font: 16px monospace; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  body.busy, body.busy * { cursor: progress !important; }
+  #studio { position: fixed; inset: 0; overflow: hidden; background: var(--stipple), #3d4046; }
+  noscript { display: block; padding: 2rem; color: var(--pen-shine); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .label { display: inline-flex; align-items: center; min-width: 0; }
+  .px { display: block; flex: none; width: calc(var(--w) * var(--px)); height: calc(7 * var(--px)); fill: currentColor; shape-rendering: crispEdges; }
+
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--pen-back); box-shadow: 0 calc(-2 * var(--px)) 0 var(--pen-shadow); }
+  .sbar { flex: none; position: relative; z-index: 10; display: flex; align-items: center; gap: calc(4 * var(--px)); height: max(var(--bar), var(--touch)); padding: 0 0 0 calc(3 * var(--px)); background: var(--pen-shine); box-shadow: 0 var(--px) 0 var(--pen-shadow); touch-action: none; }
+  .sbar .stitle { flex: 1; overflow: hidden; }
+  .sbar.menus-open .stitle { display: none; }
+  /* An open strip needs the whole bar on a phone: the screen's depth gadget steps aside, and
+     the last menu drops leftward so it stays on the screen. */
+  .sbar.menus-open .bar-right { display: none; }
+  .m-title:last-child .drop { left: auto; right: 0; }
+  @media (max-width: 700px) {
+    .sbar.menus-open { gap: 0; }
+    .sbar.menus-open .m-title { padding-left: calc(2 * var(--px)); padding-right: calc(2 * var(--px)); }
+  }
+  .area { position: relative; flex: 1; overflow: hidden; }
+  .bar-right { display: flex; gap: var(--px); margin-left: auto; align-self: stretch; }
+
+  .gad { appearance: none; border: 0; border-radius: 0; margin: 0; font: inherit; color: inherit; background: var(--pen-back); box-shadow: var(--out); min-height: var(--gad); padding: calc(2 * var(--px)) calc(5 * var(--px)); display: inline-flex; align-items: center; justify-content: center; gap: calc(6 * var(--px)); cursor: default; touch-action: manipulation; }
+  .gad:active { box-shadow: var(--in); background: var(--pen-fill); color: var(--pen-filltext); }
+  .gad:focus-visible { outline: var(--px) dashed currentColor; outline-offset: calc(-3 * var(--px)); }
+  .g-close, .g-zoom, .g-depth { width: var(--gad); padding: 0; position: relative; }
+  .g-close::before { content: ""; width: calc(3 * var(--px)); height: calc(3 * var(--px)); background: currentColor; box-shadow: 0 0 0 var(--px) var(--pen-shine); }
+  .g-depth::before, .g-depth::after { content: ""; position: absolute; width: calc(5 * var(--px)); height: calc(4 * var(--px)); border: var(--px) solid currentColor; }
+  .g-depth::before { transform: translate(calc(-1 * var(--px)), calc(-1 * var(--px))); }
+  .g-depth::after { transform: translate(var(--px), var(--px)); background: var(--pen-shine); }
+  .g-zoom::before { content: ""; width: calc(6 * var(--px)); height: calc(5 * var(--px)); border: var(--px) solid currentColor; box-shadow: inset var(--px) var(--px) 0 0 var(--pen-shine), inset calc(3 * var(--px)) calc(2 * var(--px)) 0 0 transparent; background: linear-gradient(currentColor, currentColor) 0 0 / calc(2 * var(--px)) calc(2 * var(--px)) no-repeat; }
+  .g-menus { display: none; }
+  @media (max-width: 700px), (pointer: coarse) { .g-menus { display: inline-flex; } }
+
+  .strip { display: none; align-items: stretch; align-self: stretch; }
+  .sbar.menus-open .strip { display: flex; }
+  .m-title { position: relative; background: transparent; box-shadow: none; }
+  .m-title.open { background: var(--pen-shadow); color: var(--pen-shine); }
+  .drop { display: none; position: absolute; top: 100%; left: 0; z-index: 30; min-width: calc(110 * var(--px)); flex-direction: column; background: var(--pen-shine); color: var(--pen-text); box-shadow: inset 0 0 0 var(--px) var(--pen-shadow), calc(2 * var(--px)) calc(2 * var(--px)) 0 var(--pen-shadow); padding: var(--px); }
+  .m-title.open .drop { display: flex; }
+  .m-item { justify-content: space-between; background: transparent; box-shadow: none; color: var(--pen-text); }
+  .m-item:hover, .m-item:focus-visible { background: var(--pen-shadow); color: var(--pen-shine); }
+  .m-item.disabled { opacity: 0.45; }
+
+  .win { position: absolute; display: flex; flex-direction: column; min-width: 0; background: var(--pen-back); box-shadow: var(--out), 0 0 0 var(--px) var(--pen-shadow); padding: var(--px); }
+  .win .bar { flex: none; display: flex; align-items: center; gap: calc(3 * var(--px)); height: var(--gad); padding-left: var(--px); color: var(--pen-text); touch-action: none; }
+  .win.active .bar { background: var(--pen-fill); color: var(--pen-filltext); }
+  .win .bar .title { flex: 1; overflow: hidden; }
+  .win .bar .gad { background: var(--pen-back); color: var(--pen-text); }
+  .body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: calc(2 * var(--px)); padding: calc(3 * var(--px)) calc(4 * var(--px)) calc(10 * var(--px)); }
+  .line { flex: none; min-height: var(--rowh); display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
+  .row { display: flex; flex-wrap: wrap; gap: calc(4 * var(--px)); }
+  .list { flex: 1; min-height: 0; overflow: hidden auto; display: flex; flex-direction: column; gap: var(--px); padding: var(--px); background: var(--pen-shine); box-shadow: var(--in); }
+  .item { justify-content: flex-start; box-shadow: none; background: transparent; padding: var(--px) calc(2 * var(--px)); min-height: max(var(--rowh), var(--touch)); }
+  .item.selected { background: var(--pen-fill); color: var(--pen-filltext); }
+  .err { color: var(--pen-mark); }
+  .item.err { color: #8f3610; }
+  .g-size { position: absolute; right: var(--px); bottom: var(--px); width: max(calc(9 * var(--px)), var(--touch)); height: max(calc(9 * var(--px)), var(--touch)); background: linear-gradient(135deg, transparent 55%, var(--pen-shadow) 55% 65%, transparent 65% 75%, var(--pen-shadow) 75% 85%, transparent 85%); touch-action: none; cursor: nwse-resize; }
+
+  .view { flex: 1; min-height: 0; display: flex; background: var(--pen-shine); box-shadow: var(--in); padding: var(--px); }
+  .rows { flex: 1; min-width: 0; overflow: hidden; }
+  .rows .line { min-height: 0; height: var(--rowh); padding-left: var(--px); }
+  .mark { background: var(--pen-fill); color: var(--pen-filltext); }
+  .prop { position: relative; flex: none; width: max(calc(9 * var(--px)), var(--touch)); background: var(--stipple), var(--pen-back); box-shadow: var(--in); touch-action: none; }
+  .knob { position: absolute; left: var(--px); right: var(--px); min-height: calc(6 * var(--px)); background: var(--pen-back); box-shadow: var(--out); }
+  .prop.full .knob { top: var(--px) !important; bottom: var(--px); height: auto !important; }
+
+  .blocked .body { pointer-events: none; }
+  .veil { position: absolute; inset: calc(var(--gad) + var(--px)) var(--px) var(--px); z-index: 20; display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(rgba(28, 27, 31, 0.35) 0 25%, transparent 0 50%) 0 0 / calc(2 * var(--px)) calc(2 * var(--px)); }
+  .req { max-width: 94%; display: flex; flex-direction: column; gap: calc(3 * var(--px)); padding: calc(3 * var(--px)); background: var(--pen-back); box-shadow: var(--out), 0 0 0 var(--px) var(--pen-shadow), calc(3 * var(--px)) calc(3 * var(--px)) 0 var(--pen-shadow); }
+  .req-title { padding: var(--px) calc(3 * var(--px)); background: var(--pen-fill); color: var(--pen-filltext); }
+  .req-fault .req-title { background: var(--pen-mark); color: var(--pen-shadow); }
+  .req-text { padding: 0 calc(3 * var(--px)); }
+  .req-buttons { display: flex; justify-content: space-between; gap: calc(6 * var(--px)); }
+
+  /* The fault panel: a failed mode reports here, then the workspace takes over (item 5). */
+  .fault { position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding: calc(5 * var(--px)) calc(8 * var(--px)); background: var(--pen-shadow); color: var(--pen-mark); border: calc(3 * var(--px)) solid var(--pen-mark); display: flex; flex-direction: column; align-items: center; gap: calc(2 * var(--px)); animation: fault-blink 1.4s steps(1) infinite; outline: none; }
+  @keyframes fault-blink { 50% { border-color: var(--pen-shadow); } }
+  @media (prefers-reduced-motion: reduce) { .fault { animation: none; } }
+</style>
+</head>
+<body>
+<div id="studio"></div>
+<noscript>BeSpoke Studio needs JavaScript.</noscript>
+<!--@FONT-->
+<!--@BUILD-->
+<!--@WINDOWS-->
+<!--@APP-->
+</body>
+</html>

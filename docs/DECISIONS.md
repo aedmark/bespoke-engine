@@ -2388,6 +2388,28 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a separate CLI subcommand (`bespoke init-text`); calling `wasm_deck_action` (internal) or looping `wasm_on_char` per character (renders a full frame per keystroke and lacks UTF-8).
 
+## D-192 The Studio Keeps the Browser Page and Takes an Intuition-Style Interface (2026-11-27, status: accepted; P47)
+
+**Context.** The maintainer wants the Phase 47 Studio to follow the interaction model of the Amiga's Intuition, as a surprise for Peter Spicer, and asked whether the window code itself should be engine code. D-151 chose one browser page on the Wasm engine and rejected a desktop studio on the SDL2 window because it needs a GUI toolkit written from scratch. The maintainer chose to keep the browser page and take the look and model from Intuition (2026-11-27).
+
+**Decision.**
+1. D-151 stands unchanged: the Studio is one browser page, `P47-01` keeps the file picker, and the Studio keeps no project state of its own (D-151 item 6).
+2. The interface follows Intuition's model: screens (the workspace and the running game on separate, depth-ordered screens), draggable and resizable windows with depth, close, and zoom gadgets (one per editor), boolean, string, integer, and proportional gadgets, a menu bar on the secondary pointer button with command keys, and requesters for file and diagnostic dialogs. Input is one queue of discrete messages per window, in the manner of IDCMP, matching the engine's cue model.
+3. The look is original: BeSpoke's own palette, bevels, and bitmap font. No Commodore or Amiga artwork, fonts, icons, or names appear in the page or its copy (D-075 applies; the lint stays the check).
+4. The window layer is Studio code, in the page's own JavaScript and CSS. It does not enter `src/`, and the engine is not given a windowing module (D-031). Phase 47 covers the Studio page only: the proof pages and the native SDL window keep their current presentation, so `proofs/golden/render.txt` does not change. Bringing the model to the native window would be its own phase and decision.
+5. A failed mode falls back to a working screen. When the preferred path fails (a project that does not compile, a package or image that does not load, a saved screen or font setting the page cannot apply, or a game screen that stops), the Studio reports what failed and opens its built-in workspace screen, which depends on nothing in the project, so the author can open and fix the cause from there. The failure is always shown; nothing is replaced silently. The Studio never shows a page that cannot be used.
+6. Fidelity is a touch-safe homage. On a desktop pointer the period behaviour holds: menus appear while the secondary button is held, command keys, and screens dragged down by their title bar. On touch, menus also open on a tap and gadgets grow to the 44 px rule (P42-06), so the touch-target lint applies to the Studio unchanged.
+
+7. The Studio draws all text in the engine's 5x7 face at integer scale (2x by default), reading its glyphs from `src/display/font.zig`, so the editors and the running game share one face and its Latin-1 and UTF-8 coverage. An original 8-pixel face may follow (`P47-08`); it is drawn fresh, not traced from any period system font.
+
+**Open.** Whether the window layer is later extracted for other BeSpoke front ends. It does not block `P47-01`.
+
+**Answered 2026-11-27 by the maintainer:** scope is the Studio only; the fallback rule applies to the Studio; fidelity is the touch-safe homage; `P47-01` is the window layer, the fallback screen, and one project window; the font is the 5x7 engine face now, with an 8-pixel face later (items 4 to 7).
+
+**Consequences.** `P47-01` builds the Studio from `studio/` into `site/studio.html` with its own wasm module, `bespoke-studio.wasm`, which checks scripts through the supported `compiler.check_source_with` and adds nothing to `bespoke.wasm` or the supported browser exports. The 5x7 face reaches the page through the internal `display.font`, read once at build time, so the page can draw before and without the module (items 5 and 7); a change to `font.zig` shows as a stale page in `build_studio.py --check`, and a font promoted to the supported API would remove the exception. Its message kinds are the Studio's own words (`gadget`, `menu`, `close`, `resize`, `activate`, `requester`), not period names.
+
+**Alternatives:** a native SDL2 Studio with an engine-side window layer, rejected again for the toolkit cost D-151 named and because the browser page ships to authors with no install; a plain modern web UI, rejected as the maintainer's choice of look.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

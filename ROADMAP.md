@@ -113,15 +113,16 @@ Goal: settle every part of the language, file formats, and supported API that 1.
 
 ## Phase 47: BeSpoke Studio
 
-Goal: a browser page where an author makes a whole game without a text editor: art, rooms, dialogue, and cast, played beside the editors (D-151). It follows 1.0 (P42-04). Every editor reads and writes `.bespoke` text and image data, and the CLI compiles the result unchanged.
+Goal: a browser page where an author makes a whole game without a text editor: art, rooms, dialogue, and cast, played beside the editors (D-151), in an Intuition-style windowed interface (D-192). It follows 1.0 (P42-04). Every editor reads and writes `.bespoke` text and image data, and the CLI compiles the result unchanged.
 
-- [ ] P47-01 The studio shell. One HTML page on the Wasm engine that opens a project folder or files through the browser's file picker, compiles with the engine's compiler, and shows its diagnostics in place. Acceptance: opening and saving a project without edits leaves every file byte-identical.
+- [x] P47-01 The studio shell. One HTML page on the Wasm engine with the Intuition-style window layer (screens, windows, gadgets, held menus; D-192), the built-in workspace screen that a failed mode falls back to, and one project window that opens a project folder or files through the browser's file picker, compiles with the engine's compiler, and shows its diagnostics in a requester. No editors. Acceptance: opening and saving a project without edits leaves every file byte-identical, and a project that does not compile still opens to a working Studio with its diagnostics shown. Done 2026-11-27 (session 131, D-192): `studio/` built into `site/studio.html` by `tools/build_studio.py`; `zig build test-studio`, `studio/check_wasm.js`, and `tools/studio_smoke.js` cover both acceptance lines in Chrome. The real folder picker on a disk folder is not yet hand-checked.
 - [ ] P47-02 Pixel editor: palette, sprite sheets, frames, animation preview, and PNG import (P46-04).
 - [ ] P47-03 Room editor: a backdrop, marks, props and hotspots, exits, walkways, and the optional grid, written as the scene's declarations.
 - [ ] P47-04 Dialogue map: nodes, choices, and the facts that guard each line, written as `dialogue` and `choice` blocks; a guard that never holds is shown.
 - [ ] P47-05 Cast and values: characters, routines, values, red lines, dilemmas, and appeals (Phase 45).
 - [ ] P47-06 Play beside the editors: run the game in the page with the State drawer, rewind, and hints, and jump from a fact to the script line that wrote it.
 - [ ] P47-07 Export the game as one HTML page, through the same packer as `bespoke init` projects.
+- [ ] P47-08 An original 8-pixel Studio face covering the engine font's Latin-1 and extra glyphs, drawn fresh and not traced from a period system font (D-192 item 7). Taken up only if the 5x7 face falls short in use.
 
 ## Phase 49: Classic Parser Adventures
 

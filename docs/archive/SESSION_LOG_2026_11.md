@@ -2,6 +2,14 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 120 (2026-11-21)
+- **Work.** P45-02, red lines (D-145), on the maintainer's answers (2026-11-21): `red lines <Character>: <Option>, ...` at top level, owned by the character across all its decisions; fixed program data rather than facts; a decision point with every offered option vetoed chooses nothing; and a red line must name an option some decision offers that character.
+- **Engine.** `decision.step` gains a red-lines argument and skips a vetoed option before checking knowledge or scoring; `host.tick` passes `compiled.red_lines.items`. `decision.validate_red_lines` runs per declaration in the compiler, so the diagnostic names the line that broke it, and again in the package loader. The parser reads `red lines` as two words in the top-level identifier branch (`finish_name` now holds `parse_name`'s joining), so `red` stays a usable name. `.bspk` v20 appends red lines, with `tests/fixtures/compat/v0.3.1-package-v20.bspk`; the fuzz seed `values.bespoke` gains a decision with a red line.
+- **Not done.** Not pushed or merged; the maintainer approves that. Red lines are not shown in the inspector, since they are not facts. `docs/state.html` is unchanged for the same reason as session 119.
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build test` (goldens unchanged), `zig build test-fuzz` with the red-line seeds, `build_editor_grammar.py --check`, 82 Python tests, and `check_docs.py` passed; no window or browser run.
+
+Older sessions (119 and earlier): `docs/archive/SESSION_LOG_2026_11.md`.
+
 ### Session 119 (2026-11-21)
 - **Work.** P45-01, value axes (D-144). The maintainer chose (2026-11-21): +10 is the virtue held fully and the poles name its failures; one property relation per axis (`Justice(Valerius, 8)`) instead of the roadmap's three-argument `Value(Valerius, Justice, 8)`, which a one-object fact row cannot hold; `axis <Virtue> between <Pole> and <Pole>` with ordinary `remember` for starting values; and clamping for run-time writes. Decision scoring is untouched and stays with P45-03.
 - **Engine.** `World.bound_relation` gives a property a signed range that `remember`, `restore_state`, and `clone` clamp into; bounds are program data and the save format is unchanged. `src/value.zig` declares and validates axes. The lexer reads `-3` as a number; the compiler accepts a negative only on an axis, where before a stray `-` was silently skipped. The inspector capture formats a bounded value as signed. `.bspk` v19 appends axes, with `tests/fixtures/compat/v0.3.1-package-v19.bspk`; `tests/fixtures/fuzz/values.bespoke` seeds the lexer, parser, and codegen campaigns and the v19 fixture seeds the package loader.

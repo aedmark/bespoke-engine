@@ -63,6 +63,15 @@ jobs:
           zig build wasm wasm-proofs
           node tools/wasm_smoke.js
           python3 tools/package_browser_release.py
+      - name: Check and smoke-test BeSpoke Studio (P47-01)
+        timeout-minutes: 5
+        env:
+          CHROME: google-chrome
+        run: |
+          zig build studio
+          node studio/check_wasm.js zig-out/bin/bespoke-studio.wasm
+          python3 tools/build_studio.py --check
+          node tools/studio_smoke.js
       - name: Check browser size budgets (P41-01)
         run: python3 tools/check_web_budgets.py --lantern-page "$RUNNER_TEMP/lantern-watch/index.html"
       - name: Measure simulation on Linux and in Chrome (P41-01)

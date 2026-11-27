@@ -273,6 +273,21 @@ pub fn build(b: *std.Build) void {
     supported_api_tests.root_module.linkSystemLibrary("SDL2", .{});
     const run_supported_api_tests = b.addRunArtifact(supported_api_tests);
 
+    // P47-01 (D-192): the Studio's project table and check, built natively against the same
+    // supported `bespoke` module the Studio's wasm build uses, so `zig build test` covers it.
+    const studio_tests = b.addTest(.{
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("studio/project.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    studio_tests.root_module.addImport("bespoke", bespoke_mod);
+    studio_tests.root_module.link_libc = true;
+    studio_tests.root_module.linkSystemLibrary("SDL2", .{});
+    const run_studio_tests = b.addRunArtifact(studio_tests);
+
     const fuzz_tests = b.addTest(.{
         .use_llvm = true,
         .root_module = b.createModule(.{
@@ -337,7 +352,10 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_unit_tests.step);
     test_step.dependOn(&run_supported_api_tests.step);
     test_step.dependOn(&run_proofs_unit_tests.step);
+    test_step.dependOn(&run_studio_tests.step);
     test_step.dependOn(&check_version.step);
+
+    b.step("test-studio", "Run the Studio's project tests only (studio/)").dependOn(&run_studio_tests.step);
 
     const test_engine_step = b.step("test-engine", "Run engine tests only (src/)");
     test_engine_step.dependOn(&run_lib_unit_tests.step);
@@ -547,4 +565,24 @@ pub fn build(b: *std.Build) void {
     run_harbour.has_side_effects = true;
     const publish_harbour = b.addInstallFile(harbour_page, "harbour/index.html");
     b.step("harbour", "Verify, benchmark, and build the reference game's browser page").dependOn(&publish_harbour.step);
+
+    // P47-01 (D-192): the Studio's wasm module. Studio code outside src/ against the engine
+    // built for wasm, like the Harbour; `tools/build_studio.py` embeds it in site/studio.html.
+    const studio_wasm = b.addExecutable(.{
+        .use_llvm = true,
+        .name = "bespoke-studio",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("studio/wasm.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseSmall,
+            .strip = true,
+        }),
+    });
+    studio_wasm.root_module.addImport("bespoke", wasm_bespoke);
+    studio_wasm.entry = .disabled;
+    studio_wasm.rdynamic = true;
+    // A check builds a scratch World and compiler state on the stack, as the runtime does.
+    studio_wasm.stack_size = WASM_STACK_BYTES;
+    const install_studio = b.addInstallArtifact(studio_wasm, .{});
+    b.step("studio", "Build the Studio's WebAssembly module (bespoke-studio.wasm)").dependOn(&install_studio.step);
 }

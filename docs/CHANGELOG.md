@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- BeSpoke Studio shell (`P47-01`, `D-192`): `site/studio.html`, a browser workspace of screens, draggable windows with close, zoom, and depth gadgets, held right-button menus with command keys, and requesters, all drawn in the engine's 5x7 font. It opens a project folder or files, checks the main script with the engine's compiler, and shows diagnostics in a requester, a Diagnostics window, and a read-only script view with the line marked. Saving without edits leaves every file byte-identical. When the compiler module, a saved setting, or a handler fails, the Studio says so and keeps a working workspace. No editors yet.
+
 ## 1.1.0 - 2026-11-27
 
 - The Sunken Vault classic parser test game (`P49-03`): original 6-room turn-based parser adventure under `scenarios/sunken_vault/` built via `bespoke init --template text` (`tools/build_sunken_vault.py`), featuring 6 colour-cycled 320x180 PNG backdrops, timed turn events, multi-tier hints, `BSV1` save/restore tests, and CI verification in Zig, Node Wasm, and Chrome.
