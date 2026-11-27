@@ -1,0 +1,549 @@
+# The Sunken Vault: a classic turn-based parser adventure (P49-03).
+# Six rooms, four palette colour cycles, timed turn events (torch life and tide surge),
+# and authored multi-tier hints.
+
+clock: turns
+save version 1
+
+entity Scene, Vault
+
+scene Courtyard:
+  props: RainStair
+  marks: CourtyardMark
+  backdrop: CourtyardArt
+
+scene Guardhouse:
+  props: Flint, Torch, IronKey, Ledger
+  marks: GuardhouseMark
+  backdrop: GuardhouseArt
+
+scene CisternHall:
+  props: CisternPool
+  marks: CisternMark
+  backdrop: CisternArt
+
+scene SluiceRoom:
+  props: SluiceWheel
+  marks: SluiceMark
+  backdrop: SluiceArt
+
+scene FloodedCrypt:
+  props: IronGate
+  marks: CryptMark
+  backdrop: CryptArt
+
+scene Reliquary:
+  props: StoneAltar, TideCrown
+  marks: ReliquaryMark
+  backdrop: ReliquaryArt
+
+name Courtyard: "Keep Courtyard"
+name Guardhouse: "Guardhouse"
+name CisternHall: "Cistern Hall"
+name SluiceRoom: "Sluice Chamber"
+name FloodedCrypt: "Flooded Crypt"
+name Reliquary: "Sunken Reliquary"
+
+palette:
+  ".." transparent
+  "bg" 10 12 22
+  "s1" 26 30 44
+  "s2" 44 50 68
+  "s3" 70 78 98
+  "s4" 102 112 134
+  "wd" 58 38 26
+  "wl" 92 62 40
+  "ir" 42 46 56
+  "ih" 118 126 144
+  "gd" 196 156 48
+  "gl" 242 214 112
+  "w1" 20 56 104
+  "w2" 32 88 148
+  "w3" 54 134 194
+  "w4" 116 188 228
+  "w5" 196 236 250
+  "f1" 142 34 18
+  "f2" 206 78 22
+  "f3" 242 144 30
+  "f4" 252 204 68
+  "f5" 255 244 166
+  "m1" 36 48 82
+  "m2" 72 94 142
+  "m3" 138 166 212
+  "m4" 208 224 246
+  "e1" 18 66 58
+  "e2" 34 112 92
+  "e3" 64 174 140
+  "e4" 136 232 198
+
+cycle "w1" "w2" "w3" "w4" "w5" every 6
+cycle "f1" "f2" "f3" "f4" "f5" every 4
+cycle "m1" "m2" "m3" "m4" every 12
+cycle "e1" "e2" "e3" "e4" every 9
+
+image CourtyardArt from "courtyard.png"
+image GuardhouseArt from "guardhouse.png"
+image CisternArt from "cistern.png"
+image SluiceArt from "sluice.png"
+image CryptArt from "crypt.png"
+image ReliquaryArt from "reliquary.png"
+
+alias Torch: "torch", "brand"
+alias Flint: "flint", "striker", "tinderbox"
+alias IronKey: "key", "iron key"
+alias IronGate: "gate", "iron gate", "door"
+alias TideCrown: "crown", "tide crown", "relic"
+alias SluiceWheel: "wheel", "sluice", "sluice wheel", "valve"
+alias Ledger: "ledger", "book", "notes"
+alias StoneAltar: "altar", "pedestal"
+alias CisternPool: "cistern", "water", "pool"
+alias RainStair: "stair", "stairs", "steps"
+
+relation At(who, place)
+relation Burning(item)
+relation SluiceDrained(wheel)
+relation GateUnlocked(gate)
+relation SealBroken(vault)
+relation VaultFlooded(vault)
+relation Victory(who)
+
+command Surveys: "look"
+command Surveys: "l"
+command Inventory: "inventory"
+command Inventory: "inv"
+command Inventory: "i"
+command Waits: "wait"
+command Waits: "z"
+command GoesNorth: "north"
+command GoesNorth: "n"
+command GoesSouth: "south"
+command GoesSouth: "s"
+command GoesEast: "east"
+command GoesEast: "e"
+command GoesWest: "west"
+command GoesWest: "w"
+command GoesUp: "up"
+command GoesUp: "u"
+command GoesDown: "down"
+command GoesDown: "d"
+command Takes: "take <thing>"
+command Takes: "get <thing>"
+command Reads: "read <thing>"
+command Lights: "light <thing>"
+command Lights: "light <thing> with <thing>"
+command Unlocks: "unlock <thing> with <thing>"
+command Unlocks: "unlock <thing>"
+command Unlocks: "open <thing>"
+command Turns: "turn <thing>"
+command Turns: "pull <thing>"
+
+goal RecoverCrown:
+  need HasLight:
+    room Guardhouse
+    met Burning(Torch)
+    hint 1 "Search the guardhouse east of the courtyard for flint and a torch, then light the torch."
+    hint 2 "Take both the flint and the torch in the guardhouse, then type: light torch."
+  need GateOpen:
+    room FloodedCrypt
+    met GateUnlocked(IronGate)
+    hint 1 "Take the iron key in the guardhouse and drain the sluice east of the cistern hall before unlocking the gate."
+    hint 2 "Take the iron key, go down then east to turn the sluice wheel, then go north with a lit torch and unlock the gate."
+  need HasCrown:
+    room Reliquary
+    met Carries(Scene, TideCrown)
+    hint 1 "Step north through the unlocked crypt gate and take the Crown of Tides from the altar."
+    hint 2 "Go north into the reliquary while your torch burns and type: take crown."
+  need Escaped:
+    room Courtyard
+    met Victory(Scene)
+    hint 1 "Retreat south through the crypt and cistern hall, then climb up to the courtyard with the crown."
+    hint 2 "Type south, south, up to escape with the Crown of Tides."
+
+score VaultScore:
+  lead "t72 o4 l8 v5 @2 L e4 g4 b4 a4 g4 e4 d2 e4 g4 a4 f+4 e2."
+  bass "o3 l4 v6 @7 L e2 b2 c2 d2 e2 d2 c2 b2"
+  scene Courtyard
+  scene Guardhouse
+  scene CisternHall
+  scene SluiceRoom
+  scene FloodedCrypt
+  scene Reliquary
+
+transition to scene Courtyard
+
+routine Watch(Scene):
+  remember At(Scene, Courtyard)
+  wait 1 ticks
+
+on cue Surveys(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Green seawater fills the drowned halls; the expedition is lost."
+  if not VaultFlooded(Vault):
+    if At(Scene, Courtyard):
+      if Victory(Scene):
+        say Scene: "Rain washes over the courtyard stones. With the Crown of Tides secured, the vault quest is won!"
+      if not Victory(Scene):
+        say Scene: "Rain sweeps across the keep courtyard. East stands the guardhouse; wet stone steps lead down into the cistern."
+    if At(Scene, Guardhouse):
+      say Scene: "A flickering sconce lights the stone guardhouse. An oak table holds a ledger; flint, a torch, and an iron key rest nearby. West returns to the courtyard."
+    if At(Scene, CisternHall):
+      say Scene: "A subterranean waterfall feeds a dark cistern channel. Steps climb up to the courtyard, an arch leads north into the crypt, and a passage runs east."
+    if At(Scene, SluiceRoom):
+      if SluiceDrained(SluiceWheel):
+        say Scene: "The bronze sluice wheel stands open; floodwater pours harmlessly down the culvert. West returns to the cistern hall."
+      if not SluiceDrained(SluiceWheel):
+        say Scene: "A heavy bronze sluice wheel guards a roaring culvert. West returns to the cistern hall."
+    if At(Scene, FloodedCrypt):
+      if not Burning(Torch):
+        say Scene: "Pitch darkness presses in from the flooded crypt. South leads back toward the cistern's glow."
+      if Burning(Torch):
+        if GateUnlocked(IronGate):
+          say Scene: "Torchlight glints on wet sea-moss and an unlocked iron gate leading north. South returns to the cistern hall."
+        if not GateUnlocked(IronGate):
+          say Scene: "Torchlight glints on glowing sea-moss and a locked iron gate barring the passage north. South returns to the cistern hall."
+    if At(Scene, Reliquary):
+      if not Burning(Torch):
+        say Scene: "Complete darkness fills the chamber. South returns toward the crypt."
+      if Burning(Torch):
+        if Carries(Scene, TideCrown):
+          say Scene: "The stone altar stands bare beneath the ward arch. South returns to the crypt."
+        if not Carries(Scene, TideCrown):
+          say Scene: "Ward braziers flank a carved altar bearing the golden Crown of Tides. South returns to the crypt."
+
+on cue Inventory(Scene):
+  if not Carries(Scene, Flint):
+    if not Carries(Scene, Torch):
+      if not Carries(Scene, IronKey):
+        if not Carries(Scene, TideCrown):
+          say Scene: "You are carrying nothing."
+  if Carries(Scene, Flint):
+    say Scene: "You carry a steel flint striker."
+  if Carries(Scene, Torch):
+    if Burning(Torch):
+      say Scene: "You carry a blazing pitch torch."
+    if not Burning(Torch):
+      say Scene: "You carry an unlit pitch torch."
+  if Carries(Scene, IronKey):
+    say Scene: "You carry a heavy iron key."
+  if Carries(Scene, TideCrown):
+    say Scene: "You carry the golden Crown of Tides."
+
+on cue Waits(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater swirls above the drowned steps."
+  if not VaultFlooded(Vault):
+    say Scene: "Time passes in the damp silence."
+
+on cue GoesEast(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater fills the lower vault; the descent is over."
+  if not VaultFlooded(Vault):
+    if At(Scene, Guardhouse):
+      say Scene: "The eastern wall of the guardhouse is solid masonry."
+    if At(Scene, SluiceRoom):
+      say Scene: "Only the culvert wall lies east."
+    if At(Scene, FloodedCrypt):
+      say Scene: "Damp stone walls block the way east."
+    if At(Scene, Reliquary):
+      say Scene: "Carved reliefs line the eastern wall."
+    if At(Scene, Courtyard):
+      forget At(Scene, Courtyard)
+      remember At(Scene, Guardhouse)
+      transition to scene Guardhouse
+      say Scene: "You step east into the guardhouse."
+    if At(Scene, CisternHall):
+      forget At(Scene, CisternHall)
+      remember At(Scene, SluiceRoom)
+      transition to scene SluiceRoom
+      say Scene: "You follow the passage east into the sluice chamber."
+
+on cue GoesWest(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater fills the lower vault; the descent is over."
+  if not VaultFlooded(Vault):
+    if At(Scene, Courtyard):
+      say Scene: "A sheer drop into the surf blocks the west side."
+    if At(Scene, CisternHall):
+      say Scene: "The underground waterfall blocks the western wall."
+    if At(Scene, FloodedCrypt):
+      say Scene: "Cold crypt stonework closes off the west."
+    if At(Scene, Reliquary):
+      say Scene: "The western alcove holds no passage."
+    if At(Scene, Guardhouse):
+      forget At(Scene, Guardhouse)
+      remember At(Scene, Courtyard)
+      transition to scene Courtyard
+      say Scene: "You step west back into the rain-swept courtyard."
+    if At(Scene, SluiceRoom):
+      forget At(Scene, SluiceRoom)
+      remember At(Scene, CisternHall)
+      transition to scene CisternHall
+      say Scene: "You return west to the cistern hall."
+
+on cue GoesDown(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater fills the lower vault; the descent is over."
+  if not VaultFlooded(Vault):
+    if At(Scene, Guardhouse):
+      say Scene: "There is no stair down from the guardhouse."
+    if At(Scene, CisternHall):
+      say Scene: "Only the flooded cistern channel lies below."
+    if At(Scene, SluiceRoom):
+      say Scene: "The culvert drops straight into dark water."
+    if At(Scene, FloodedCrypt):
+      say Scene: "You are already on the crypt floor."
+    if At(Scene, Reliquary):
+      say Scene: "There is no lower level beneath the reliquary."
+    if At(Scene, Courtyard):
+      forget At(Scene, Courtyard)
+      remember At(Scene, CisternHall)
+      transition to scene CisternHall
+      say Scene: "You descend the slick stone steps into the cistern hall."
+
+on cue GoesUp(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater fills the lower vault; the descent is over."
+  if not VaultFlooded(Vault):
+    if At(Scene, Courtyard):
+      say Scene: "Only the stormy sky lies above."
+    if At(Scene, Guardhouse):
+      say Scene: "Timber rafters overhead offer no climb."
+    if At(Scene, SluiceRoom):
+      say Scene: "There is no stair up from the sluice chamber."
+    if At(Scene, FloodedCrypt):
+      say Scene: "The vaulted ceiling is low; return south to the cistern first."
+    if At(Scene, Reliquary):
+      say Scene: "The reliquary dome has no upper exit."
+    if At(Scene, CisternHall):
+      forget At(Scene, CisternHall)
+      remember At(Scene, Courtyard)
+      transition to scene Courtyard
+      if Carries(Scene, TideCrown):
+        remember Victory(Scene)
+        say Scene: "You climb out into the rain with the Crown of Tides shining in your hand!"
+      if not Carries(Scene, TideCrown):
+        say Scene: "You climb the wet steps back up to the courtyard."
+
+on cue GoesNorth(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater fills the lower vault; the descent is over."
+  if not VaultFlooded(Vault):
+    if At(Scene, Courtyard):
+      say Scene: "The keep parapet blocks the way north."
+    if At(Scene, Guardhouse):
+      say Scene: "The north wall is lined with empty weapon racks."
+    if At(Scene, SluiceRoom):
+      say Scene: "There is no passage north from the sluice chamber."
+    if At(Scene, Reliquary):
+      say Scene: "The moonlit ward arch marks the end of the vault."
+    if At(Scene, FloodedCrypt):
+      if not Burning(Torch):
+        say Scene: "You dare not step deeper into pitch darkness without a light."
+      if Burning(Torch):
+        if not GateUnlocked(IronGate):
+          say Scene: "The locked iron gate bars your way north."
+        if GateUnlocked(IronGate):
+          forget At(Scene, FloodedCrypt)
+          remember At(Scene, Reliquary)
+          transition to scene Reliquary
+          say Scene: "You pass through the iron gate into the sunken reliquary."
+    if At(Scene, CisternHall):
+      forget At(Scene, CisternHall)
+      remember At(Scene, FloodedCrypt)
+      transition to scene FloodedCrypt
+      if Burning(Torch):
+        say Scene: "You wade north into the flooded crypt, torch held high."
+      if not Burning(Torch):
+        say Scene: "You step north into the flooded crypt, where darkness closes around you."
+
+on cue GoesSouth(Scene):
+  if VaultFlooded(Vault):
+    say Scene: "Seawater fills the lower vault; the descent is over."
+  if not VaultFlooded(Vault):
+    if At(Scene, Courtyard):
+      say Scene: "The keep's outer wall drops to the sea."
+    if At(Scene, Guardhouse):
+      say Scene: "Only narrow arrow slits face south."
+    if At(Scene, CisternHall):
+      say Scene: "The cistern pool blocks the way south."
+    if At(Scene, SluiceRoom):
+      say Scene: "Damp masonry blocks the southern wall."
+    if At(Scene, FloodedCrypt):
+      forget At(Scene, FloodedCrypt)
+      remember At(Scene, CisternHall)
+      transition to scene CisternHall
+      say Scene: "You wade south back into the cistern hall."
+    if At(Scene, Reliquary):
+      forget At(Scene, Reliquary)
+      remember At(Scene, FloodedCrypt)
+      transition to scene FloodedCrypt
+      say Scene: "You step south back through the gate into the crypt."
+
+on cue Takes(Scene, Flint):
+  if Carries(Scene, Flint):
+    say Scene: "You already carry the flint striker."
+  if not Carries(Scene, Flint):
+    remember Carries(Scene, Flint)
+    say Scene: "You pocket the steel flint striker."
+
+on cue Takes(Scene, Torch):
+  if Carries(Scene, Torch):
+    say Scene: "You already carry the pitch torch."
+  if not Carries(Scene, Torch):
+    remember Carries(Scene, Torch)
+    say Scene: "You take the pitch-soaked torch."
+
+on cue Takes(Scene, IronKey):
+  if Carries(Scene, IronKey):
+    say Scene: "You already hold the iron key."
+  if not Carries(Scene, IronKey):
+    remember Carries(Scene, IronKey)
+    say Scene: "You lift the heavy iron key from its peg."
+
+on cue Takes(Scene, TideCrown):
+  if not Burning(Torch):
+    say Scene: "You cannot see the altar in the dark."
+  if Burning(Torch):
+    if Carries(Scene, TideCrown):
+      say Scene: "You already carry the Crown of Tides."
+    if not Carries(Scene, TideCrown):
+      remember Carries(Scene, TideCrown)
+      remember SealBroken(Vault)
+      say Scene: "You lift the Crown of Tides from the altar. Beneath the flagstones, an ancient seal cracks!"
+
+on cue Takes(Scene, Ledger):
+  say Scene: "The heavy ledger is chained to the oak table."
+
+on cue LooksAt(Scene, Ledger):
+  say Scene: "A damp guardhouse ledger bound in salt-stained leather."
+
+on cue Reads(Scene, Ledger):
+  say Scene: "The final entry reads: 'Disturbing the crown breaks the sea-seal; the vault floods in nine turns unless the east sluice wheel is turned first.'"
+
+on cue LooksAt(Scene, Flint):
+  say Scene: "A heavy steel striker and shard of flint."
+
+on cue LooksAt(Scene, Torch):
+  if Burning(Torch):
+    say Scene: "Pitch crackles brightly at the head of the torch."
+  if not Burning(Torch):
+    say Scene: "A stout wooden torch wrapped in dry pitch."
+
+on cue LooksAt(Scene, IronKey):
+  say Scene: "A cold iron key cut with deep wards."
+
+on cue LooksAt(Scene, RainStair):
+  say Scene: "Slick stone steps descend from the courtyard into the cistern."
+
+on cue LooksAt(Scene, CisternPool):
+  say Scene: "Dark water churns beneath the subterranean waterfall."
+
+on cue LooksAt(Scene, SluiceWheel):
+  if SluiceDrained(SluiceWheel):
+    say Scene: "The bronze sluice wheel is cranked open, draining the culvert."
+  if not SluiceDrained(SluiceWheel):
+    say Scene: "A spoked bronze sluice wheel set above the roaring culvert."
+
+on cue LooksAt(Scene, IronGate):
+  if not Burning(Torch):
+    say Scene: "It is too dark to make out the gate."
+  if Burning(Torch):
+    if GateUnlocked(IronGate):
+      say Scene: "The iron crypt gate stands unlocked."
+    if not GateUnlocked(IronGate):
+      say Scene: "A heavy iron gate secured by a rusted warded lock."
+
+on cue LooksAt(Scene, StoneAltar):
+  if not Burning(Torch):
+    say Scene: "You cannot see the altar in the dark."
+  if Burning(Torch):
+    say Scene: "A carved stone pedestal etched with tide runes."
+
+on cue LooksAt(Scene, TideCrown):
+  if not Burning(Torch):
+    say Scene: "You cannot see anything in the dark."
+  if Burning(Torch):
+    say Scene: "A circlet of hammered gold set with luminous sea-green stones."
+
+on cue Lights(Scene, Torch):
+  if not Carries(Scene, Torch):
+    say Scene: "You do not have a torch."
+  if Carries(Scene, Torch):
+    if not Carries(Scene, Flint):
+      say Scene: "You have nothing to strike a spark with."
+    if Carries(Scene, Flint):
+      if Burning(Torch):
+        say Scene: "The torch is already burning."
+      if not Burning(Torch):
+        remember Burning(Torch) for 18 ticks
+        say Scene: "You strike a spark from the flint; the pitch torch blazes to life."
+
+on cue Lights(Scene, Torch, Flint):
+  if not Carries(Scene, Torch):
+    say Scene: "You do not have a torch."
+  if Carries(Scene, Torch):
+    if not Carries(Scene, Flint):
+      say Scene: "You do not have the flint."
+    if Carries(Scene, Flint):
+      if Burning(Torch):
+        say Scene: "The torch is already burning."
+      if not Burning(Torch):
+        remember Burning(Torch) for 18 ticks
+        say Scene: "You strike a spark from the flint; the pitch torch blazes to life."
+
+on cue Turns(Scene, SluiceWheel):
+  if SluiceDrained(SluiceWheel):
+    say Scene: "The sluice wheel is already turned full open."
+  if not SluiceDrained(SluiceWheel):
+    remember SluiceDrained(SluiceWheel)
+    say Scene: "With a groan of bronze gears, you crank the sluice wheel open. Water roars down the drain culvert."
+
+on cue Unlocks(Scene, IronGate):
+  if not Burning(Torch):
+    say Scene: "It is too dark to make out the lock."
+  if Burning(Torch):
+    if GateUnlocked(IronGate):
+      say Scene: "The iron gate is already unlocked."
+    if not GateUnlocked(IronGate):
+      if not Carries(Scene, IronKey):
+        say Scene: "You have no key that fits the iron gate."
+      if Carries(Scene, IronKey):
+        remember GateUnlocked(IronGate)
+        say Scene: "The iron key turns with a heavy clack; the crypt gate swings open."
+
+on cue Unlocks(Scene, IronGate, IronKey):
+  if not Burning(Torch):
+    say Scene: "It is too dark to make out the lock."
+  if Burning(Torch):
+    if GateUnlocked(IronGate):
+      say Scene: "The iron gate is already unlocked."
+    if not GateUnlocked(IronGate):
+      if not Carries(Scene, IronKey):
+        say Scene: "You do not have the iron key."
+      if Carries(Scene, IronKey):
+        remember GateUnlocked(IronGate)
+        say Scene: "The iron key turns with a heavy clack; the crypt gate swings open."
+
+when Burning(Torch):
+  wait 12 ticks
+  if Burning(Torch):
+    say Scene: "Your torch sputters low; only a handful of turns of pitch remain."
+
+when Torch stops being Burning:
+  say Scene: "Your torch gutters out into darkness."
+
+when SealBroken(Vault):
+  wait 1 ticks
+  if not Victory(Scene):
+    say Scene: "A deep boom rolls through the stonework. Seawater begins pouring into the lower halls."
+  wait 3 ticks
+  if not Victory(Scene):
+    if SluiceDrained(SluiceWheel):
+      say Scene: "The sea surges in, but the open sluice drains the flood safely down the culvert."
+    if not SluiceDrained(SluiceWheel):
+      say Scene: "Cold water rises past your ankles; reach the courtyard before the cistern floods!"
+  wait 4 ticks
+  if not Victory(Scene):
+    if not SluiceDrained(SluiceWheel):
+      remember VaultFlooded(Vault)
+      say Scene: "A wall of green seawater surges through the cistern, sealing the vault!"

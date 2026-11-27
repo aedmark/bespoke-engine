@@ -32,6 +32,7 @@ def check_sizes(entries: list[tuple[Path, int]]) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lantern-page", type=Path, help="also check a freshly built Lantern Watch export")
+    parser.add_argument("--sunken-vault-page", type=Path, help="also check a freshly built Sunken Vault export")
     args = parser.parse_args()
     budgets = json.loads(Path(__file__).with_name("web_budgets.json").read_text(encoding="utf-8"))
     modules = [ROOT / "zig-out" / "bin" / name for name in ("bespoke.wasm", "bespoke-proofs.wasm")]
@@ -41,6 +42,8 @@ def main() -> int:
     entries.extend((p, budgets["standalonePageBytes"]) for p in PROOF_PAGE_PATHS)
     if args.lantern_page is not None:
         entries.append((args.lantern_page, budgets["standalonePageBytes"]))
+    if args.sunken_vault_page is not None:
+        entries.append((args.sunken_vault_page, budgets["standalonePageBytes"]))
     return 0 if check_sizes(entries) else 1
 
 
