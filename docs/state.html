@@ -7,72 +7,218 @@
 <meta name="description" content="What the BeSpoke Engine can do on 27 November 2026, in plain language for players and in enough depth for a development team.">
 <style>
   :root {
-    --bg: #fbfaf7; --fg: #1f2328; --muted: #5b636e; --rule: #e3e0d8;
-    --accent: #2f6f5e; --accent-soft: #e6f1ed; --card: #ffffff; --warn: #8a5a12; --warnbg: #fbf3e4;
-    --code: #f3f1ec;
+    --page-width: 1160px;
+    --bg: #000000; --bg-dither: #000055;
+    --menubar-bg: #aaaaaa; --menubar-text: #000000;
+    --line: #55ffff; --line-subtle: #555555;
+    --text: #aaaaaa; --text-bright: #ffffff;
+    --accent: #ff5555; --accent-deep: #aa0000;
+    --highlight: #ffff55; --ok: #55ff55; --surface: #000000;
+    --surface-alt: #000055; --surface-hover: #000055;
+    --window-bg: #0000aa; --window-chrome: #55ff55; --link: #ffff55; --comment: #888888;
+    --mono: "IBM Plex Mono", "JetBrains Mono", "Courier New", Courier, ui-monospace, monospace;
+    --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #15181c; --fg: #e6e8eb; --muted: #9aa3ad; --rule: #2a3038;
-      --accent: #7cc4ad; --accent-soft: #1d2b27; --card: #1b1f24; --warn: #e5b56a; --warnbg: #2a2318;
-      --code: #20252b;
+
+  /* Light theme: SCI0 dialog palette, white panels on a blue field. Follows the system setting
+     unless the menubar toggle stored an explicit choice in data-theme. */
+  :root[data-theme="light"] {
+    --bg: #0000aa; --bg-dither: #000088;
+    --surface: #ffffff; --surface-alt: #ffffff; --surface-hover: #ffff55;
+    --window-bg: #aaaaaa; --window-chrome: #000000;
+    --menubar-bg: #ffffff; --menubar-text: #000000;
+    --line: #000000; --line-subtle: #555555;
+    --text: #000000; --text-bright: #000000; --muted: #555555; --comment: #555555;
+    --accent: #aa0000; --accent-deep: #aa0000; --highlight: #aa5500; --link: #0000aa; --ok: #00aa00;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #0000aa; --bg-dither: #000088;
+      --surface: #ffffff; --surface-alt: #ffffff; --surface-hover: #ffff55;
+      --window-bg: #aaaaaa; --window-chrome: #000000;
+      --menubar-bg: #ffffff; --menubar-text: #000000;
+      --line: #000000; --line-subtle: #555555;
+      --text: #000000; --text-bright: #000000; --muted: #555555; --comment: #555555;
+      --accent: #aa0000; --accent-deep: #aa0000; --highlight: #aa5500; --link: #0000aa; --ok: #00aa00;
+      color-scheme: light;
     }
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0 !important; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 Georgia, "Iowan Old Style", serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 48px 18px 90px; }
-  h1, h2, h3, nav, .facts, table, .tag, .eyebrow, .card h3, .lede { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  h1 { font-size: 2.3rem; line-height: 1.15; margin: 4px 0 12px; }
-  .eyebrow { color: var(--accent); font-size: .85rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin: 0; }
-  .lede { font-size: 1.15rem; line-height: 1.55; color: var(--fg); margin: 0 0 10px; }
-  .sub { color: var(--muted); font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 26px; }
-  h2 { font-size: 1.45rem; line-height: 1.25; margin: 56px 0 10px; padding-top: 20px; border-top: 1px solid var(--rule); scroll-margin-top: 12px; }
-  h3 { font-size: 1.05rem; line-height: 1.3; margin: 24px 0 6px; }
-  p { margin: 0 0 14px; }
-  ul, ol { padding-left: 1.3em; margin: 0 0 14px; }
+  body { background-color: var(--bg); background-image: repeating-conic-gradient(var(--bg) 0% 25%, var(--bg-dither) 0% 50%); background-size: 4px 4px; background-attachment: fixed; color: var(--text); font: 0.95rem/1.65 var(--sans); padding-bottom: 60px; overflow-x: hidden; }
+  ::selection { background: var(--highlight); color: #000; }
+  a { color: var(--link); text-decoration: underline; }
+  a:hover { background: var(--accent-deep); color: #fff; text-decoration: none; }
+  :focus-visible { outline: 2px dashed var(--highlight); outline-offset: 3px; }
+
+  /* Fixed-width page frame: same width as index.html, centred, with safe-area gutters for notched phones and landscape tablets */
+  .container { width: 100%; max-width: var(--page-width); margin: 0 auto; padding: 0 max(20px, env(safe-area-inset-left)) 0 max(20px, env(safe-area-inset-right)); }
+  @media (max-width: 480px) { .container { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); } }
+
+  header.nav-header { position: sticky; top: 0; z-index: 1000; background: var(--menubar-bg); color: var(--menubar-text); border-bottom: 4px solid #000; padding: 3px 0; }
+  .nav-inner { display: flex; align-items: center; gap: 16px; }
+  .brand { font-family: var(--mono); font-weight: 700; font-size: .92rem; text-transform: uppercase; color: var(--menubar-text); text-decoration: none; padding: 3px 6px; white-space: nowrap; flex-shrink: 0; }
+  .brand:hover { background: #000; color: #ffff55; }
+  .nav-links { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: .8rem; text-transform: uppercase; white-space: nowrap; }
+  .nav-links a { color: var(--menubar-text); text-decoration: none; font-weight: 700; padding: 3px 6px; display: inline-flex; align-items: center; min-height: 44px; }
+  .nav-links a:hover { background: #000; color: #ffff55; }
+  .nav-toggles { margin-left: auto; flex-shrink: 0; }
+  .btn-toggle { background: #000; color: var(--ega-bcyan, #55ffff); border: 2px solid #555; font: 700 .75rem var(--mono); padding: 3px 10px; min-height: 44px; min-width: 4.5rem; cursor: pointer; text-transform: uppercase; }
+  .btn-toggle:hover { background: #aa0000; color: #ffff55; border-color: #ffff55; }
+  @media (max-width: 1024px) {
+    .nav-toggles { order: 2; }
+    .nav-links { order: 3; }
+    .nav-inner { flex-wrap: wrap; gap: 6px 12px; }
+    .nav-links { width: 100%; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+  }
+
+
+  /* DOS window frame (Turbo Vision style): the page body sits in one blue window
+     with a double-line border, a title cut into the top edge, and a status line. */
+  main.container { padding-top: 32px; }
+  .dos-window {
+    position: relative;
+    background: var(--window-bg);
+    border: 4px double var(--line);
+    box-shadow: 8px 8px 0 #000000;
+    padding: clamp(14px, 3.5vw, 40px) clamp(12px, 3.5vw, 40px) 0;
+    margin: 0 0 28px;
+  }
+  .dos-titlebar {
+    position: absolute;
+    top: -0.85em;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 12px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1.6;
+    pointer-events: none;
+  }
+  .dos-close, .dos-title, .dos-zoom {
+    background: var(--window-bg);
+    color: var(--text-bright);
+    padding: 0 6px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .dos-close, .dos-zoom { color: var(--window-chrome); }
+  .dos-title { background: var(--menubar-bg); color: #000000; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .dos-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    margin: 40px calc(-1 * clamp(12px, 3.5vw, 40px)) 0;
+    padding: 4px 14px;
+    background: var(--menubar-bg);
+    color: #000000;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .dos-status b { color: var(--accent-deep); }
+  @media (max-width: 480px) {
+    main.container { padding-top: 24px; }
+    .dos-window { box-shadow: 4px 4px 0 #000000; }
+    .dos-titlebar { padding: 0 6px; font-size: 0.75rem; }
+  }
+  .hero { text-align: center; padding: 0 0 28px; }
+  .eyebrow { display: inline-flex; font-family: var(--mono); font-size: .82rem; font-weight: 700; color: var(--line); background: var(--surface); border: 2px solid var(--line-subtle); box-shadow: 3px 3px 0 #000; padding: 5px 14px; text-transform: uppercase; margin-bottom: 20px; }
+  h1 { font-family: var(--mono); font-size: clamp(1.7rem, 4vw, 2.6rem); font-weight: 800; letter-spacing: -.5px; line-height: 1.15; color: var(--text-bright); text-transform: uppercase; margin: 0 auto 16px; max-width: 900px; }
+  .lede { font-size: 1.15rem; line-height: 1.6; color: var(--text); max-width: 780px; margin: 0 auto 14px; }
+  .lede strong { color: var(--highlight); }
+  .sub { color: var(--text); font-size: .92rem; max-width: 720px; margin: 0 auto 26px; opacity: .85; }
+
+  h2 { font-family: var(--mono); font-size: clamp(1.3rem, 3vw, 1.9rem); font-weight: 800; color: var(--text-bright); text-transform: uppercase; letter-spacing: -.5px; line-height: 1.25; margin: 56px 0 16px; padding-top: 22px; border-top: 3px solid var(--line); scroll-margin-top: 70px; }
+  h3 { font-family: var(--mono); font-size: 1rem; font-weight: 700; color: var(--line); text-transform: uppercase; letter-spacing: .06em; line-height: 1.3; margin: 28px 0 10px; }
+  p { margin: 0 0 14px; max-width: 80ch; }
+  ul, ol { padding-left: 1.3em; margin: 0 0 14px; max-width: 80ch; }
   li { margin: 5px 0; }
-  a { color: var(--accent); }
-  code { font: .86em ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--code); border-radius: 4px; padding: 1px 5px; }
-  pre { background: var(--code); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: .84rem/1.55 ui-monospace, Menlo, Consolas, monospace; margin: 0 0 16px; }
-  pre code { background: none; padding: 0; font-size: 1em; }
-  nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
-  nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--fg); text-decoration: none; font-size: .9rem; }
-  nav a:hover, nav a:focus-visible { border-color: var(--accent); color: var(--accent); }
-  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; margin: 26px 0 8px; }
-  .fact { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
-  .fact b { display: block; font-size: 1.7rem; line-height: 1.2; color: var(--accent); }
-  .fact span { font-size: .85rem; color: var(--muted); }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 12px; margin: 14px 0 10px; }
-  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px 12px; }
-  .card h3 { margin: 0 0 6px; font-size: 1rem; }
-  .card p { margin: 0 0 8px; font-size: .97rem; line-height: 1.5; }
-  .card .hood { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--rule); color: var(--muted); font: .8rem/1.5 system-ui, sans-serif; }
-  .card .hood b { color: var(--fg); font-weight: 600; }
-  .big { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); gap: 14px; margin: 14px 0; }
-  .big .card { border-left: 4px solid var(--accent); }
-  table { width: 100%; border-collapse: collapse; font-size: .9rem; margin: 0 0 16px; }
-  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
+  strong { color: var(--text-bright); }
+  code { font: .86em var(--mono); background: var(--surface-alt); border: 1px solid var(--line-subtle); color: var(--highlight); padding: 1px 5px; overflow-wrap: anywhere; }
+  pre { background: var(--surface-alt); border: 1px solid var(--line); padding: 14px 16px; overflow-x: auto; font: .82rem/1.55 var(--mono); color: var(--highlight); margin: 0 0 16px; }
+  pre code { background: none; border: 0; padding: 0; font-size: 1em; }
+
+  nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0 0 8px; }
+  nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 2px solid var(--line-subtle); background: var(--surface); box-shadow: 3px 3px 0 #000; color: var(--line); text-decoration: none; font: 700 .78rem var(--mono); text-transform: uppercase; }
+  nav a:hover, nav a:focus-visible { border-color: var(--highlight); background: var(--accent-deep); color: var(--highlight); }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 14px; margin: 26px 0 8px; }
+  .fact { background: var(--surface); border: 2px solid var(--line-subtle); box-shadow: 4px 4px 0 #000; padding: 14px 16px; }
+  .fact b { display: block; font: 800 1.8rem/1.2 var(--mono); color: var(--highlight); }
+  .fact span { font-size: .85rem; color: var(--text); }
+
+  /* Capability list: full-width rows, title left and detail right, so each entry reads as a line of prose rather than a tile */
+  .cards { display: grid; gap: 6px; margin: 6px 0 18px; }
+  /* Solid panel per row: the blue window and the scanline overlay cut contrast on bare text */
+  .cards .card { background: var(--surface); border: 0; border-left: 4px solid var(--line-subtle); box-shadow: 3px 3px 0 #000000; padding: 14px 16px 12px; display: grid; grid-template-columns: 1fr; column-gap: 32px; }
+  .cards .card:hover { background: var(--surface-hover); border-left-color: var(--line); box-shadow: 3px 3px 0 #000000; }
+  .cards .card h3 { color: var(--highlight); }
+  .cards .card p, .cards .card .hood { max-width: none; }
+  @media (min-width: 760px) {
+    .cards .card { grid-template-columns: minmax(180px, 250px) 1fr; padding: 16px 20px 14px; }
+    .cards .card h3 { grid-column: 1; grid-row: 1 / span 2; margin: 2px 0 0; }
+    .cards .card > p { grid-column: 2; }
+  }
+  .big { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 18px; margin: 14px 0; }
+  .card { background: var(--surface); border: 2px solid var(--line-subtle); box-shadow: 4px 4px 0 #000; padding: 18px 20px 14px; transition: border-color .12s ease; }
+  .card:hover { border-color: var(--line); box-shadow: 4px 4px 0 var(--line-subtle); }
+  .card h3 { margin: 0 0 8px; font-size: .95rem; color: var(--text-bright); }
+  .card p { margin: 0 0 8px; font-size: .92rem; line-height: 1.6; }
+  .card .hood { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--line-subtle); color: var(--text); font-size: .8rem; line-height: 1.55; opacity: .9; }
+  .card .hood b { color: var(--line); font-family: var(--mono); text-transform: uppercase; font-size: .72rem; letter-spacing: .06em; }
+  .big .card { border-left: 6px solid var(--line); }
+
+  .table-wrap { overflow-x: auto; margin: 0 0 8px; border: 2px solid var(--line-subtle); background: var(--surface); -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-subtle); vertical-align: top; }
+  th { color: var(--line); font: 700 .75rem var(--mono); text-transform: uppercase; letter-spacing: .06em; background: var(--surface-alt); }
   td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .table-wrap { overflow-x: auto; margin: 0 0 6px; }
-  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin: 1px 3px 1px 0; white-space: nowrap; }
-  .tag.off { background: var(--code); color: var(--muted); }
-  .note { background: var(--warnbg); border-left: 3px solid var(--warn); padding: 14px 18px 4px; border-radius: 4px; margin: 0 0 16px; }
-  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 8px; margin: 14px 0 18px; font-family: system-ui, sans-serif; }
-  .flow div { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: .85rem; line-height: 1.4; }
-  .flow b { display: block; color: var(--accent); font-size: .92rem; margin-bottom: 2px; }
-  .small { font-size: .9rem; color: var(--muted); }
-  footer { margin-top: 60px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--muted); font: .85rem/1.5 system-ui, sans-serif; }
+  .tag { display: inline-block; font: 700 .7rem var(--mono); text-transform: uppercase; padding: 1px 7px; background: var(--surface); border: 1px solid var(--ok); color: var(--ok); margin: 1px 3px 1px 0; white-space: nowrap; }
+  .tag.off { border-color: var(--line-subtle); color: var(--text); }
+  .note { background: var(--surface); border: 2px solid var(--highlight); border-left-width: 6px; box-shadow: 4px 4px 0 #000; padding: 14px 18px 4px; margin: 0 0 16px; }
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; margin: 14px 0 18px; }
+  .flow div { background: var(--surface); border: 2px solid var(--line-subtle); padding: 10px 12px; font-size: .85rem; line-height: 1.45; }
+  .flow b { display: block; color: var(--line); font: 700 .8rem var(--mono); text-transform: uppercase; margin-bottom: 2px; }
+  .small { font-size: .9rem; opacity: .85; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 3px solid var(--line); color: var(--text); font-size: .85rem; line-height: 1.6; text-align: center; }
+  footer p { margin-left: auto; margin-right: auto; }
 </style>
+<script>
+  /* Apply a stored theme before first paint so the page does not flash; storage can be unavailable. */
+  try { var t = localStorage.getItem('bespoke-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 </head>
 <body>
-<main>
+<header class="nav-header">
+  <div class="container nav-inner">
+    <a class="brand" href="../index.html">BeSpoke Engine</a>
+    <div class="nav-links" aria-label="Pages">
+      <a href="../index.html">Showcase</a>
+      <a href="../harbour.html">The Harbour</a>
+      <a href="../sunken-vault.html">The Sunken Vault</a>
+      <a href="manual.html">Manual</a>
+      <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <div class="nav-toggles"><button class="btn-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">Light</button></div>
+  </div>
+</header>
+<main class="container">
+<div class="dos-window">
+<div class="dos-titlebar" aria-hidden="true"><span class="dos-close">[&#9632;]</span><span class="dos-title">&#9552; STATE.TXT &#9552;</span><span class="dos-zoom">[&#8593;]</span></div>
+<div class="hero">
 
 <p class="eyebrow">BeSpoke Engine 1.1.0 &middot; 27 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
+</div>
 
 <nav aria-label="Sections">
   <a href="#minute">In one minute</a>
@@ -289,27 +435,27 @@ routine Inspector(Moss):
 <div class="table-wrap">
 <table>
   <tr><th>Demo</th><th>What it shows</th><th>Plays in</th></tr>
-  <tr><td><a href="../site/tavern.html">The Tavern Heist</a></td><td>A cat steals the cheese while a bard charms the guard. No cutscene, just rules reacting.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/pips.html">The Pip-Spitting Green</a></td><td>Rig a fair contest: lure the judge back, move the pegs, wait for the breeze. A spit counts only if the judge sees it.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/beard.html">The Borrowed Beard</a></td><td>A disguise gathered piece by piece across three scenes.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/village.html">The Living Village</a></td><td>Six villagers live their days; a theft, a witness, a rumour, and an arrest emerge on their own.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/donkey.html">The Donkey of Lamp Point</a></td><td>A hazard that knocks you down, a timed window, and a way past a stubborn donkey.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/tides.html">The Well of Three Tides</a></td><td>Three characters in three centuries pass objects through one well.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/grog.html">Caustic Grog</a></td><td>Carry grog that eats its cups, pouring before each one fails.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/barbs.html">Brackwater Barbs</a></td><td>Duels won with comebacks you learn by hearing them.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/saltmarket.html">The Saltmarket</a></td><td>One goal, three ways in; choosing one closes the others.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/weathercock.html">The Copper Weathercock</a></td><td>A borrowed month on a countdown: close the loop or the branch collapses.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/bell-tower.html">The Bell Tower</a></td><td>Spells played as four-note tunes; backwards, they undo.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/fire-escape.html">The Castle Fire Escape</a></td><td>Fire, smoke, and water spreading across a grid; get the timing right to save the door.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/observatory.html">The Larkspur Observatory</a></td><td>Staff with their own agendas, typed commands, generated hints, and evidence presented to suspects.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/valerius.html">Valerius and the Bread</a></td><td>Learn what a captain values and appeal to it. His red lines hold whatever the score, and the winter's outcome changes him by spring.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/lamplighter.html">The Lamplighter's Round</a></td><td>Light two street lamps before the watch walks his round, in rooms, people, and props drawn as pixel art imported from PNG files.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/long-gallery.html">The Long Gallery</a></td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/word-foundry.html">The Word Foundry</a></td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Web</span><span class="tag">Headless</span></td></tr>
-  <tr><td><a href="../site/cinder-table.html">The Cinder Table</a></td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Web</span><span class="tag">Headless</span></td></tr>
-  <tr><td><a href="../site/tide-beacon.html">The Tide Beacon</a></td><td>Four palette colour cycles animate waterfall foam, ocean surf, embers, stars, and a lantern on one static 320x180 PNG backdrop.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td><a href="../site/harbour.html">Lantern Watch: The Harbour</a></td><td>The reference game: ten connected harbour stops played by typed commands, with a six-person society running alongside.</td><td><span class="tag">Web</span><span class="tag">Text</span></td></tr>
-  <tr><td><a href="../site/sunken-vault.html">The Sunken Vault</a></td><td>Six-room classic turn-based parser crawl built with <code>--template text</code>, timed torch and tide-surge events, and colour-cycled PNG rooms.</td><td><span class="tag">Web</span><span class="tag">Text</span></td></tr>
+  <tr><td><a href="../tavern.html">The Tavern Heist</a></td><td>A cat steals the cheese while a bard charms the guard. No cutscene, just rules reacting.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../pips.html">The Pip-Spitting Green</a></td><td>Rig a fair contest: lure the judge back, move the pegs, wait for the breeze. A spit counts only if the judge sees it.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../beard.html">The Borrowed Beard</a></td><td>A disguise gathered piece by piece across three scenes.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../village.html">The Living Village</a></td><td>Six villagers live their days; a theft, a witness, a rumour, and an arrest emerge on their own.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../donkey.html">The Donkey of Lamp Point</a></td><td>A hazard that knocks you down, a timed window, and a way past a stubborn donkey.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../tides.html">The Well of Three Tides</a></td><td>Three characters in three centuries pass objects through one well.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../grog.html">Caustic Grog</a></td><td>Carry grog that eats its cups, pouring before each one fails.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../barbs.html">Brackwater Barbs</a></td><td>Duels won with comebacks you learn by hearing them.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../saltmarket.html">The Saltmarket</a></td><td>One goal, three ways in; choosing one closes the others.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../weathercock.html">The Copper Weathercock</a></td><td>A borrowed month on a countdown: close the loop or the branch collapses.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../bell-tower.html">The Bell Tower</a></td><td>Spells played as four-note tunes; backwards, they undo.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../fire-escape.html">The Castle Fire Escape</a></td><td>Fire, smoke, and water spreading across a grid; get the timing right to save the door.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../observatory.html">The Larkspur Observatory</a></td><td>Staff with their own agendas, typed commands, generated hints, and evidence presented to suspects.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../valerius.html">Valerius and the Bread</a></td><td>Learn what a captain values and appeal to it. His red lines hold whatever the score, and the winter's outcome changes him by spring.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../lamplighter.html">The Lamplighter's Round</a></td><td>Light two street lamps before the watch walks his round, in rooms, people, and props drawn as pixel art imported from PNG files.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../long-gallery.html">The Long Gallery</a></td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../word-foundry.html">The Word Foundry</a></td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Web</span><span class="tag">Headless</span></td></tr>
+  <tr><td><a href="../cinder-table.html">The Cinder Table</a></td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Web</span><span class="tag">Headless</span></td></tr>
+  <tr><td><a href="../tide-beacon.html">The Tide Beacon</a></td><td>Four palette colour cycles animate waterfall foam, ocean surf, embers, stars, and a lantern on one static 320x180 PNG backdrop.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../harbour.html">Lantern Watch: The Harbour</a></td><td>The reference game: ten connected harbour stops played by typed commands, with a six-person society running alongside.</td><td><span class="tag">Web</span><span class="tag">Text</span></td></tr>
+  <tr><td><a href="../sunken-vault.html">The Sunken Vault</a></td><td>Six-room classic turn-based parser crawl built with <code>--template text</code>, timed torch and tide-surge events, and colour-cycled PNG rooms.</td><td><span class="tag">Web</span><span class="tag">Text</span></td></tr>
 </table>
 </div>
 
@@ -340,6 +486,28 @@ routine Inspector(Moss):
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
 <footer>BeSpoke Engine 1.1.0 &middot; status as of 27 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<div class="dos-status" aria-hidden="true"><span><b>&#9658;</b> Ready</span><span><b>Mode</b> Read-only</span></div>
+</div>
 </main>
+<script>
+  (function () {
+    var root = document.documentElement, btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    function current() {
+      var set = root.getAttribute('data-theme');
+      if (set) return set;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    function label() { var c = current(); btn.textContent = c === 'dark' ? 'Light' : 'Dark'; btn.setAttribute('aria-pressed', c === 'light' ? 'true' : 'false'); }
+    btn.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('bespoke-theme', next); } catch (e) {}
+      label();
+    });
+    if (window.matchMedia) { var mq = window.matchMedia('(prefers-color-scheme: light)'); if (mq.addEventListener) mq.addEventListener('change', label); }
+    label();
+  })();
+</script>
 </body>
 </html>
