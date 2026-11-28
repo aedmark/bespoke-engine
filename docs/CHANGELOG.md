@@ -4,6 +4,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 1.2.1 - 2026-11-28
+
+A Studio patch: no engine, language, package, or save change. Projects made by `bespoke init` now build in CI against `v1.2.1`.
+
 - The Studio's Project window opens any script as text (`D-211`): clicking a script in the list picks it, its Edit button opens it in a text area, and Make main makes it the main script (a click used to do that straight away). Project > Edit script does the same.
 
 ## 1.2.0 - 2026-11-28
