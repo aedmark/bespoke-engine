@@ -33,7 +33,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 | Namespace | Supported surface |
 | --- | --- |
 | `world` | `DEFAULT_ARENA_SIZE`, `EntityId`, `RelationKind`, `RelationType`, `ObjectKind` (P48-08), `Fact`, `PatternTerm`, `PatternClause`, `VariableBindings`, `World`, `QueryIterator` |
-| `spatial` | `WaypointId`, `Point2D`, `Waypoint`, `Hotspot`, `SpatialSystem`, `SpatialSystem.Portal`, `SpatialSystem.TransferPolicy` |
+| `spatial` | `WaypointId`, `Point2D`, `Waypoint`, `Hotspot`, `SpatialSystem`, `SpatialSystem.Portal`, `SpatialSystem.TransferPolicy`, `Exit` (the type behind `host.Exit`), and `art_to_world` (P47-11, D-199) |
 
 Supported `World` methods are `init`, `deinit`, `intern_entity`, `intern_relation`, `intern_relation_kind`, `declare_object_kind`, `object_kind` (P48-08, D-178), `set_display_name`, `display_text`, `set_phrase`, `phrase_override` (P48-09, D-179), `claim_relation` (P48-10), `lookup_entity`, `lookup_relation`, `get_entity_name`, `get_relation_meta`, `fact_count`, `remember`, `forget`, `transfer_item`, `has_fact`, `find_first`, `get_property`, `query`, `find_first_match`, `find_first_match_from`, `has_multi_match`, `find_all_matches`, `get_recently_expired`, `save_state`, `restore_state`, and `clone`. `EntityId.to_int` / `from_int`, `RelationKind.to_int` / `from_int`, `QueryIterator.next`, and `VariableBindings.get` / `set` are supported.
 
@@ -56,7 +56,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 
 Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave_notes`, `set_dialogue_speaker`, `open_generated_dialogue`, `dialogue_view`, `choose`, `sync_dialogue`, `transition_to_scene`, `evaluates_belief`, `assert_belief`, and `reject_belief`. Construct a VM with `host.init_vm`; advance it with `host.tick` or `Session.advance`, never bare `VM.step_tick`.
 
-Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `restart_routines`, `combine`, `hint`, `decision`, `dilemma`, `known_value`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
+Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `restart_routines`, `combine`, `hint`, `decision`, `dilemma`, `known_value`, `has_state`, `place_waypoint`, `add_exit_marks`, `take_exit_here`, and `take_any_exit_here` (a host's exits, then the script's room-block exits; P47-11, D-199).
 
 `host.present(vm, compiled, actor, evidence, person)` records `Presented(person, evidence)` as a set fact and fires `Presents(actor, person, evidence)`; it returns whether a handler answered (P44-03). The record holds one row per distinct piece of evidence. The default typed frames `present <thing> to <thing>` and `show <thing> to <thing>` use the same action.
 

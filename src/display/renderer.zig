@@ -242,6 +242,22 @@ pub fn world_to_screen(world_x: i32, world_y: i32, screen_w: i32, screen_h: i32)
     };
 }
 
+test "D-199: art_to_world inverts world_to_screen within half a unit" {
+    const spatial = @import("../spatial.zig");
+    var y: u32 = 0;
+    while (y < 180) : (y += 7) {
+        var x: u32 = 0;
+        while (x < 320) : (x += 5) {
+            const w = spatial.art_to_world(x, y);
+            const p = world_to_screen(w.x, w.y, 1280, 720);
+            const fx: i32 = @intCast(x * 4 + 2);
+            const fy: i32 = @intCast(y * 4 + 2);
+            try std.testing.expect(@abs(p.x - fx) <= @divTrunc(spatial.WORLD_UNIT_X, 2));
+            try std.testing.expect(@abs(p.y - fy) <= @divTrunc(spatial.WORLD_UNIT_Y, 2));
+        }
+    }
+}
+
 /// Hit-tests screen coordinates against visible waypoint anchors.
 pub fn hit_test_waypoint(
     screen_x: i32,

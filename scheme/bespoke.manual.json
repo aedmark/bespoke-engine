@@ -1101,6 +1101,30 @@
           "related": ["authoring-guide-walkthroughs", "scene-hotspots-and-props", "standalone-script-runner-and-package-compiler", "mml-script-scores"]
         },
         {
+          "id": "script-room-blocks",
+          "title": "Script Room Blocks: Positions, Walkways, and Exits",
+          "summary": "A room block places a scene's marks and props in art pixels, says which marks walkways join, and declares exits to other scenes, so a script alone lays out and links its rooms.",
+          "synopsis": "room Yard: | mark Gate at 40 120 | prop Bucket at 214 128 | walkway Gate to Well | exit Well to Hall at Door",
+          "tags": ["rooms", "layout", "exits", "dsl", "spatial"],
+          "what": "One room <Scene>: block per scene places every mark and prop the scene lists at x and y on the 320x180 art, joins marks with walkway A to B lines, and declares exits: a plain walk that ends on an exit mark takes the player to another scene's mark, on the command line, in the desktop window, and in the browser. A scene without a room block keeps the default row of marks.",
+          "how": [
+            "The parser reads room as a contextual word and checks each block against its scene once the script is read: every listed mark and prop is placed, nothing unlisted is, positions lie inside the art, walkways join two of the scene's marks, and an exit leaves from one of its marks for a mark of another declared scene; each mistake names its line.",
+            "spatial.art_to_world snaps the centre of each art pixel to the nearest world unit (one unit is 4.5 art pixels across and 3 down at 1280x720), so walking, hit tests, saves, and pathfinding are unchanged; a renderer test keeps the mapping in step with world_to_screen.",
+            "A scene with any walkway line uses only its declared walkways; without one, its marks keep the default chain.",
+            "Exits are program data in CompiledProgram.exits, written to a required EXIT package section that a reader without it refuses by name. host.take_any_exit_here takes a host's own exits first, then the script's; with no scene named, the player's room is the scene."
+          ],
+          "why": "The room editor needs a language to write, and a script-only game needs to walk between rooms without Zig. Art pixels match what an author paints, snapping keeps the engine's world untouched, and replacing the chain lets an author keep two marks apart.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-198", "target": "docs/DECISIONS.md#d-198", "kind": "decision"},
+            {"label": "Architectural Decision D-199", "target": "docs/DECISIONS.md#d-199", "kind": "decision"},
+            {"label": "Room Block Parsing", "target": "src/compiler/parser.zig", "kind": "source"},
+            {"label": "Art-Pixel Snapping", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "EXIT Package Section", "target": "src/package.zig", "kind": "source"}
+          ],
+          "related": ["script-pixel-art", "scene-hotspots-and-props", "authoring-guide-walkthroughs"]
+        },
+        {
           "id": "starter-template-builds",
           "title": "Starter Template: Bundled Releases, Browser Builds, and CI",
           "summary": "bespoke init writes a project that tests, builds a self-contained release, builds a browser version, and carries a CI workflow for Linux, macOS, Windows, and the web.",

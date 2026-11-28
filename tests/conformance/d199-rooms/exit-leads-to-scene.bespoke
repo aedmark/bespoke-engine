@@ -1,0 +1,30 @@
+# A walk that ends on a room block's exit mark takes the player to the other scene's mark.
+# pins: D-199
+# ticks: 12
+# expect line: Scene: Hall
+# expect fact: Warm(Hero)
+
+scene Yard:
+  cast: Hero
+  marks: Gate, Well
+
+scene Hall:
+  marks: Door, Hearth
+
+room Yard:
+  mark Gate at 40 120
+  mark Well at 200 132
+  walkway Gate to Well
+  exit Well to Hall at Door
+
+room Hall:
+  mark Door at 30 140
+  mark Hearth at 250 140
+
+relation Warm(who)
+
+routine Stroll(Hero):
+  walk Hero to Well
+  wait 2 ticks
+  walk Hero to Hearth
+  remember Warm(Hero)

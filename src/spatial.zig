@@ -24,6 +24,56 @@ pub const Point2D = struct {
     }
 };
 
+/// Where an art pixel stands in the world (P47-11, D-199): the centre of art pixel (`x`, `y`)
+/// on the 320x180 art, rounded to the nearest world unit. The art is drawn 4x into the
+/// 1280x720 frame, and `renderer.world_to_screen` puts world (wx, wy) at frame
+/// (280 + 18 wx, 380 + 12 wy) at that size, so one world unit is 4.5 art pixels across and 3
+/// down; the rounding moves a point by at most 2.25 art pixels across and 1.5 down. The
+/// renderer's test "D-199: art_to_world inverts world_to_screen within half a unit" keeps the
+/// two in step.
+pub const ART_FRAME_SCALE: i32 = 4;
+pub const WORLD_ORIGIN_X: i32 = 280;
+pub const WORLD_ORIGIN_Y: i32 = 380;
+pub const WORLD_UNIT_X: i32 = 18;
+pub const WORLD_UNIT_Y: i32 = 12;
+
+pub fn art_to_world(x: u32, y: u32) Point2D {
+    const fx: i32 = @as(i32, @intCast(x)) * ART_FRAME_SCALE + @divTrunc(ART_FRAME_SCALE, 2);
+    const fy: i32 = @as(i32, @intCast(y)) * ART_FRAME_SCALE + @divTrunc(ART_FRAME_SCALE, 2);
+    return .{ .x = round_div(fx - WORLD_ORIGIN_X, WORLD_UNIT_X), .y = round_div(fy - WORLD_ORIGIN_Y, WORLD_UNIT_Y) };
+}
+
+/// `a / b` rounded to the nearest whole number, halves away from zero; `b` is positive.
+fn round_div(a: i32, b: i32) i32 {
+    return if (a >= 0) @divTrunc(a + @divTrunc(b, 2), b) else -@divTrunc(-a + @divTrunc(b, 2), b);
+}
+
+/// A doorway between scenes (D-094, D-100, D-199): when the player's walk ends on `mark`
+/// while `scene` is on stage, the stage changes to `to_scene` and the player stands on
+/// `to_mark`. A player placed on an exit mark stays put; only a walk that ends there, or a walk
+/// asked for while already standing there, leaves. Hosts list their own (`host.Exit`), and a
+/// script declares its own in a room block (`CompiledProgram.exits`).
+pub const Exit = struct {
+    scene: []const u8,
+    mark: []const u8,
+    to_scene: []const u8,
+    to_mark: []const u8,
+    /// Where to add `mark` when the script declares no such mark: world coordinates in `scene`,
+    /// joined to the nearest mark there. Script marks are spaced 20 units apart from 0, so a
+    /// doorway past the last one would fall off the stage; this places it on screen. Script
+    /// exits leave it null: their marks are declared.
+    add_at: ?struct { x: i32, y: i32 } = null,
+};
+
+test "D-199: art pixels snap to the nearest world unit" {
+    // Frame (280, 380) is world (0, 0): art pixel (70, 95) has its centre at frame (282, 382).
+    try std.testing.expectEqual(Point2D{ .x = 0, .y = 0 }, art_to_world(70, 95));
+    // Art (0, 0) centres at frame (2, 2): (2 - 280) / 18 = -15.4, (2 - 380) / 12 = -31.5.
+    try std.testing.expectEqual(Point2D{ .x = -15, .y = -32 }, art_to_world(0, 0));
+    // The art's far corner centres at frame (1278, 718): 55.4 and 28.2.
+    try std.testing.expectEqual(Point2D{ .x = 55, .y = 28 }, art_to_world(319, 179));
+}
+
 pub const Waypoint = struct {
     id: WaypointId,
     room: EntityId,

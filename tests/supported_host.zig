@@ -84,6 +84,8 @@ comptime {
     require(bespoke.runner, &.{ "RunConfig", "CheckOptions", "check_file_with", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "art_sources", "ArtSources", "ArtImage", "ArtAnimation", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
     require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "hint", "decision", "dilemma", "known_value", "restart_routines" }, "host");
+    require(bespoke.host, &.{ "Exit", "add_exit_marks", "take_exit_here", "take_any_exit_here" }, "host");
+    require(bespoke.spatial, &.{ "Exit", "art_to_world" }, "spatial");
     require(bespoke.world, &.{"ObjectKind"}, "world");
     require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind", "set_display_name", "display_text", "set_phrase", "phrase_override" }, "world.World");
     require(bespoke.reserved, &.{ "Release", "LANGUAGE", "AuthorRelation", "AUTHOR_FACING", "newer_than_language", "engine_may_use", "is_bookkeeping" }, "reserved");

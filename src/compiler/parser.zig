@@ -173,6 +173,21 @@ pub const RelationDecl = struct {
     is_property: bool,
 };
 
+/// One line of a `room <Scene>:` block (P47-11, D-199). Positions are art pixels as written;
+/// codegen snaps them to world units.
+pub const RoomPlace = struct { name: []const u8, x: u32, y: u32, prop: bool, at: Token };
+pub const RoomWalkway = struct { a: []const u8, b: []const u8, at: Token };
+pub const RoomExit = struct { mark: []const u8, to_scene: []const u8, to_mark: []const u8, at: Token };
+/// `room <Scene>:`: where the scene's marks and props stand, which marks walkways join, and
+/// where exits lead. Checked against the scene's lists before codegen sees it.
+pub const RoomDecl = struct {
+    scene: []const u8,
+    at: Token,
+    places: []const RoomPlace,
+    walkways: []const RoomWalkway,
+    exits: []const RoomExit,
+};
+
 pub const SceneDef = struct {
     name: []const u8,
     cast: std.array_list.Managed([]const u8),
@@ -616,6 +631,8 @@ pub const PhraseDecl = struct { key: []const u8, text: []const u8 };
 pub const AST = struct {
     /// Pixel art and what it is attached to (P46-03, D-155).
     art: ArtDecl = .{},
+    /// `room <Scene>:` blocks (P47-11, D-199), checked; in the parser's allocator.
+    rooms: []const RoomDecl = &.{},
     /// `save version N` (P48-08, D-162); 1 when the script declares none.
     save_version: ?u32 = null,
     /// `rewinds reroll` (P48-14, D-184): a rewind keeps the dice going.
@@ -771,6 +788,7 @@ pub const Parser = struct {
     look_srcs: std.ArrayListUnmanaged(LookSource) = .empty,
     part_srcs: std.ArrayListUnmanaged(PartBinding) = .empty,
     cycle_srcs: std.ArrayListUnmanaged(CycleSource) = .empty,
+    room_srcs: std.ArrayListUnmanaged(RoomDecl) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -1516,7 +1534,130 @@ pub const Parser = struct {
 
         try self.check_limits();
         try self.resolve_art(&ast);
+        try self.resolve_rooms(&ast);
         return ast;
+    }
+
+    /// Checks every room block against its scene (D-199 item 4): the scene is declared with
+    /// `scene <Name>:`, each `mark` and `prop` line names one the scene lists, every mark and
+    /// prop it lists is placed, walkways join two of its marks, and an exit leaves from one of
+    /// its marks for a mark of another declared scene.
+    fn resolve_rooms(self: *Parser, ast: *AST) !void {
+        for (self.room_srcs.items, 0..) |room, i| {
+            for (self.room_srcs.items[0..i]) |prior| if (std.mem.eql(u8, prior.scene, room.scene))
+                return self.error_at(room.at, "scene '{s}' has two room blocks; a scene has one", .{room.scene});
+            const scene = for (ast.scene_defs.items) |*sd| {
+                if (std.mem.eql(u8, sd.name, room.scene)) break sd;
+            } else return self.error_at(room.at, "room '{s}' names no scene declared with 'scene {s}:'", .{ room.scene, room.scene });
+            for (room.places) |place| {
+                const listed = if (place.prop) scene.props.items else scene.marks.items;
+                if (!contains(listed, place.name))
+                    return self.error_at(place.at, "room '{s}' places {s} '{s}', which scene '{s}' does not list under '{s}:'", .{ room.scene, if (place.prop) "prop" else "mark", place.name, room.scene, if (place.prop) "props" else "marks" });
+            }
+            for (scene.marks.items) |m| if (!placed(room.places, m, false))
+                return self.error_at(room.at, "room '{s}' does not place mark '{s}'; once a scene has a room block, every mark it lists needs a 'mark {s} at <x> <y>' line", .{ room.scene, m, m });
+            for (scene.props.items) |p| if (!placed(room.places, p, true))
+                return self.error_at(room.at, "room '{s}' does not place prop '{s}'; once a scene has a room block, every prop it lists needs a 'prop {s} at <x> <y>' line", .{ room.scene, p, p });
+            for (room.walkways) |w| {
+                for ([_][]const u8{ w.a, w.b }) |end| if (!contains(scene.marks.items, end))
+                    return self.error_at(w.at, "walkway joins '{s}', which is not a mark of scene '{s}'", .{ end, room.scene });
+                if (std.mem.eql(u8, w.a, w.b)) return self.error_at(w.at, "a walkway joins two different marks; '{s}' is named twice", .{w.a});
+            }
+            for (room.exits) |e| {
+                if (!contains(scene.marks.items, e.mark))
+                    return self.error_at(e.at, "exit leaves from '{s}', which is not a mark of scene '{s}'", .{ e.mark, room.scene });
+                if (std.mem.eql(u8, e.to_scene, room.scene)) return self.error_at(e.at, "exit from '{s}' leads to its own scene; an exit goes to another scene", .{e.mark});
+                const to = for (ast.scene_defs.items) |*sd| {
+                    if (std.mem.eql(u8, sd.name, e.to_scene)) break sd;
+                } else return self.error_at(e.at, "exit from '{s}' leads to '{s}', which is not a scene declared with 'scene {s}:'", .{ e.mark, e.to_scene, e.to_scene });
+                if (!contains(to.marks.items, e.to_mark))
+                    return self.error_at(e.at, "exit from '{s}' arrives at '{s}', which is not a mark of scene '{s}'", .{ e.mark, e.to_mark, e.to_scene });
+                for (room.exits) |other| if (other.at.line < e.at.line and std.mem.eql(u8, other.mark, e.mark))
+                    return self.error_at(e.at, "mark '{s}' has two exits; a mark leads one way", .{e.mark});
+            }
+        }
+        ast.rooms = self.room_srcs.items;
+    }
+
+    fn contains(list: []const []const u8, name: []const u8) bool {
+        for (list) |item| if (std.mem.eql(u8, item, name)) return true;
+        return false;
+    }
+
+    fn placed(places: []const RoomPlace, name: []const u8, prop: bool) bool {
+        for (places) |p| if (p.prop == prop and std.mem.eql(u8, p.name, name)) return true;
+        return false;
+    }
+
+    /// A name in a room line: quoted and taken whole, or words on this line up to `stop` (or
+    /// up to `to`, which is a keyword), joined by single spaces.
+    fn take_room_name(self: *Parser, stop: []const u8) ![]const u8 {
+        const line = self.current.line;
+        if (self.current.tag == .string_literal) return (try self.expect(.string_literal)).slice;
+        var buf = std.array_list.Managed(u8).init(self.allocator);
+        while (self.current.line == line and (self.current.tag == .identifier or self.current.tag == .number)) {
+            if (std.mem.eql(u8, self.current.slice, stop)) break;
+            if (buf.items.len > 0) try buf.append(' ');
+            try buf.appendSlice(self.current.slice);
+            try self.advance();
+        }
+        if (buf.items.len == 0) return self.set_error("expected a name, found '{s}'", .{self.current.slice});
+        return buf.toOwnedSlice();
+    }
+
+    /// `room <Scene>:` and its lines (P47-11, D-199); `start` is the consumed `room`.
+    fn parse_room(self: *Parser, start: Token) !void {
+        const scene = try self.parse_name();
+        if (self.current.tag != .colon) return self.error_at(self.current, "room '{s}' expects ':' and its lines below it", .{scene});
+        try self.advance();
+        _ = try self.expect(.indent);
+        var places: std.ArrayListUnmanaged(RoomPlace) = .empty;
+        var walkways: std.ArrayListUnmanaged(RoomWalkway) = .empty;
+        var exits: std.ArrayListUnmanaged(RoomExit) = .empty;
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const at = self.current;
+            const word = at.slice;
+            try self.advance();
+            if (at.tag == .identifier and (std.mem.eql(u8, word, "mark") or std.mem.eql(u8, word, "prop"))) {
+                const name = try self.take_room_name("at");
+                if (!std.mem.eql(u8, self.current.slice, "at") or self.current.line != at.line)
+                    return self.error_at(at, "{s} '{s}' expects 'at <x> <y>' in art pixels", .{ word, name });
+                try self.advance();
+                var v: [2]u32 = undefined;
+                for (&v) |*n| {
+                    if (self.current.tag != .number or self.current.line != at.line)
+                        return self.error_at(at, "{s} '{s}' expects 'at <x> <y>' in art pixels", .{ word, name });
+                    n.* = try self.take_u32();
+                }
+                if (v[0] >= image_mod.ART_WIDTH or v[1] >= image_mod.ART_HEIGHT)
+                    return self.error_at(at, "{s} '{s}' at ({d}, {d}) is outside the {d}x{d} art", .{ word, name, v[0], v[1], image_mod.ART_WIDTH, image_mod.ART_HEIGHT });
+                const prop = std.mem.eql(u8, word, "prop");
+                for (places.items) |prior| if (prior.prop == prop and std.mem.eql(u8, prior.name, name))
+                    return self.error_at(at, "room '{s}' places {s} '{s}' twice", .{ scene, word, name });
+                try places.append(self.allocator, .{ .name = name, .x = v[0], .y = v[1], .prop = prop, .at = at });
+            } else if (at.tag == .identifier and std.mem.eql(u8, word, "area") and self.current.line == at.line) {
+                try self.parse_area();
+            } else if (at.tag == .identifier and std.mem.eql(u8, word, "walkway")) {
+                const a = try self.take_room_name("");
+                if (self.current.tag != .kw_to or self.current.line != at.line) return self.error_at(at, "walkway expects '<mark> to <mark>'", .{});
+                try self.advance();
+                const b = try self.take_room_name("");
+                try walkways.append(self.allocator, .{ .a = a, .b = b, .at = at });
+            } else if (at.tag == .identifier and std.mem.eql(u8, word, "exit")) {
+                const mark = try self.take_room_name("");
+                if (self.current.tag != .kw_to or self.current.line != at.line) return self.error_at(at, "exit expects '<mark> to <scene> at <mark>'", .{});
+                try self.advance();
+                const to_scene = try self.take_room_name("at");
+                if (!std.mem.eql(u8, self.current.slice, "at") or self.current.line != at.line) return self.error_at(at, "exit expects '<mark> to <scene> at <mark>'", .{});
+                try self.advance();
+                const to_mark = try self.take_room_name("");
+                try exits.append(self.allocator, .{ .mark = mark, .to_scene = to_scene, .to_mark = to_mark, .at = at });
+            } else return self.error_at(at, "a room line is 'mark', 'prop', 'area', 'walkway', or 'exit'; found '{s}'", .{word});
+            if (self.current.line == at.line and self.current.tag != .dedent and self.current.tag != .eof)
+                return self.set_error("unexpected '{s}' at the end of a room line", .{self.current.slice});
+        }
+        _ = try self.expect(.dedent);
+        try self.room_srcs.append(self.allocator, .{ .scene = scene, .at = start, .places = places.items, .walkways = walkways.items, .exits = exits.items });
     }
 
     fn mark_declared(ast: *const AST, name: []const u8) bool {
@@ -2592,6 +2733,10 @@ pub const Parser = struct {
         }
         if (std.mem.eql(u8, word, "area") and named) {
             try self.parse_area();
+            return true;
+        }
+        if (std.mem.eql(u8, word, "room") and named) {
+            try self.parse_room(start);
             return true;
         }
         return false;

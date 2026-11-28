@@ -1122,7 +1122,12 @@ pub const WasmRuntime = struct {
     /// Takes the exit on the mark the player stands on, if there is one; true if it did.
     fn exit_here(self: *WasmRuntime) !bool {
         if (self.player_entity == .none or self.decks.len == 0) return false;
-        const exit = (try host_mod.take_exit_here(&self.world, &self.spatial, &self.vm, self.decks[self.deck_index].exits, self.player_entity)) orelse return false;
+        const deck_exits = self.decks[self.deck_index].exits;
+        // The deck's own exits first, then the script's room-block exits (D-199).
+        const exit = (if (self.program) |*program|
+            try host_mod.take_any_exit_here(&self.world, &self.spatial, &self.vm, deck_exits, program, self.player_entity)
+        else
+            try host_mod.take_exit_here(&self.world, &self.spatial, &self.vm, deck_exits, self.player_entity)) orelse return false;
         self.approach = null;
         var name_buf: [48]u8 = undefined;
         var buf: [80]u8 = undefined;
@@ -2617,6 +2622,44 @@ test "D-195: a deck loads a package handed over at run time and keeps no hold on
         left.deinit();
         return error.TestUnexpectedResult;
     } else |_| {}
+}
+
+test "D-199: a script deck takes a room-block exit when the player's walk ends on its mark" {
+    const testing = std.testing;
+    const script =
+        \\scene Yard:
+        \\  cast: Hero
+        \\  marks: Gate, Well
+        \\
+        \\scene Hall:
+        \\  marks: Door, Hearth
+        \\
+        \\room Yard:
+        \\  mark Gate at 40 120
+        \\  mark Well at 200 132
+        \\  walkway Gate to Well
+        \\  exit Well to Hall at Door
+        \\
+        \\room Hall:
+        \\  mark Door at 30 140
+        \\  mark Hearth at 250 140
+        \\
+        \\routine Stroll(Hero):
+        \\  wait 1 ticks
+    ;
+    const decks = [_]Deck{script_deck("ROOMS", script)};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    const hall = rt.world.lookup_entity("Hall").?;
+    const well = rt.spatial.graph.find_waypoint_in_room(rt.world.lookup_entity("Yard").?, "Well").?;
+    // The player walks to the exit mark, as a WALK click asks; the deck itself lists no exits.
+    try testing.expect(try rt.spatial.walk_to(rt.player_entity, well));
+    for (0..12) |_| try rt.step_tick();
+    try testing.expectEqual(hall, rt.vm.current_scene.?);
+    const here = rt.spatial.graph.get_waypoint(rt.spatial.agents.get(rt.player_entity).?.current_wp).?;
+    try testing.expectEqualStrings("Door", here.name);
 }
 
 test "P48-09: the browser shows a script's display names and phrases" {

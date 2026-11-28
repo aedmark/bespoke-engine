@@ -95,6 +95,9 @@ pub const Section = enum(u8) {
     art,
     text,
     cycles,
+    /// A script's room-block exits (P47-11, D-199). Required: a reader without it would play
+    /// the game with its doorways shut, so it refuses the package by name instead.
+    exits,
 
     pub fn tag(self: Section) [4]u8 {
         return SECTION_TAGS[@intFromEnum(self)];
@@ -119,6 +122,7 @@ pub const SECTION_TAGS = [_][4]u8{
     "NAME".*, "PLAC".*, "CODE".*, "RULE".*, "DRFT".*, "SOCI".*, "DUEL".*, "DGRD".*,
     "GRID".*, "AGND".*, "CMND".*, "SCOR".*, "CAST".*, "GURD".*, "GOAL".*, "SPEL".*,
     "DCSN".*, "AXIS".*, "REDL".*, "DLMA".*, "IMGS".*, "ARTB".*, "TEXT".*, "CYCL".*,
+    "EXIT".*,
 };
 
 comptime {
@@ -1889,7 +1893,46 @@ fn write_section(allocator: std.mem.Allocator, comptime which: Section, w: anyty
             return true;
         },
         .cycles => return used(compiled.art.cycles.len) and try done(write_art_cycles(w, compiled.art)),
+        .exits => return used(compiled.exits.items.len) and try done(write_exits(w, compiled.exits.items)),
     }
+}
+
+/// The most exits a package may hold; one per mark at most, so the waypoint limit bounds it.
+const MAX_EXITS: usize = std.math.maxInt(u16);
+
+fn write_exits(w: anytype, exits: []const spatial_mod.Exit) !void {
+    try w.writeInt(u16, @intCast(exits.len), .little);
+    for (exits) |e| for ([_][]const u8{ e.scene, e.mark, e.to_scene, e.to_mark }) |text| try write_str(w, text);
+}
+
+/// Reads the exits and checks each against the loaded world and graph: both scenes are
+/// entities, and each mark is a waypoint of its scene. Untrusted input (D-151 item 2).
+fn read_exits(allocator: std.mem.Allocator, reader: anytype, world: *const World, spatial: ?*const SpatialSystem) !std.ArrayListUnmanaged(spatial_mod.Exit) {
+    var list: std.ArrayListUnmanaged(spatial_mod.Exit) = .empty;
+    errdefer free_exits(allocator, &list);
+    const count = try reader.takeInt(u16, .little);
+    try list.ensureTotalCapacity(allocator, count);
+    for (0..count) |_| {
+        var texts: [4][]const u8 = undefined;
+        var got: usize = 0;
+        errdefer for (texts[0..got]) |t| allocator.free(t);
+        while (got < 4) : (got += 1) texts[got] = try read_str(allocator, reader);
+        list.appendAssumeCapacity(.{ .scene = texts[0], .mark = texts[1], .to_scene = texts[2], .to_mark = texts[3] });
+    }
+    for (list.items) |e| {
+        const from = world.lookup_entity(e.scene) orelse return error.InvalidProgramExit;
+        const to = world.lookup_entity(e.to_scene) orelse return error.InvalidProgramExit;
+        if (spatial) |sp| {
+            if (sp.graph.find_waypoint_in_room(from, e.mark) == null) return error.InvalidProgramExit;
+            if (sp.graph.find_waypoint_in_room(to, e.to_mark) == null) return error.InvalidProgramExit;
+        }
+    }
+    return list;
+}
+
+fn free_exits(allocator: std.mem.Allocator, list: *std.ArrayListUnmanaged(spatial_mod.Exit)) void {
+    for (list.items) |e| for ([_][]const u8{ e.scene, e.mark, e.to_scene, e.to_mark }) |t| allocator.free(t);
+    list.deinit(allocator);
 }
 
 fn used(count: usize) bool {
@@ -2521,6 +2564,13 @@ pub fn load_package_linked(
         try read_art_cycles(allocator, &stream, &art);
         try finish(&stream);
     };
+    var exits: std.ArrayListUnmanaged(spatial_mod.Exit) = .empty;
+    errdefer free_exits(allocator, &exits);
+    if (comptime linked.contains(.exits)) if (table.get(.exits)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        exits = try read_exits(allocator, &stream, world, spatial);
+        try finish(&stream);
+    };
 
     return CompiledProgram{
         .drafts = drafts,
@@ -2555,6 +2605,7 @@ pub fn load_package_linked(
         .turn_clock = turn_clock,
         .fingerprint = fingerprint,
         .art = art,
+        .exits = exits,
     };
 }
 
@@ -3095,6 +3146,69 @@ test "P48-24: read_str frees buffer on truncated stream and package bounds refus
         std.mem.writeInt(u32, code[0..4], bytecode_mod.MAX_BYTECODE_LEN + 1, .little);
         reseal_for_test(bad);
         try testing.expectError(error.BytecodeTooLarge, load_for_test(bad));
+    }
+}
+
+test "D-199: room exits round-trip in a required EXIT section that a reader without it refuses" {
+    const testing = std.testing;
+    const src =
+        \\scene Yard:
+        \\  cast: Hero
+        \\  props: Bucket
+        \\  marks: Gate, Well, Shed
+        \\
+        \\scene Hall:
+        \\  marks: Door, Hearth
+        \\
+        \\room Yard:
+        \\  mark Gate at 40 120
+        \\  mark Well at 200 132
+        \\  mark Shed at 120 60
+        \\  prop Bucket at 214 128
+        \\  walkway Gate to Well
+        \\  exit Well to Hall at Door
+        \\
+        \\room Hall:
+        \\  mark Door at 30 140
+        \\  mark Hearth at 250 140
+        \\
+        \\routine Stroll(Hero):
+        \\  walk Hero to Well
+        \\
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compile_for_test(testing.allocator, &world, &spatial, src);
+    defer compiled.deinit();
+    var bytes: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer bytes.deinit();
+    try save_package(testing.allocator, &bytes.writer, &compiled, &world, &spatial);
+    const table = try read_section_table(bytes.written()[@sizeOf(PackageHeader)..]);
+    const exit_bytes = table.get(.exits).?;
+    // Required: the flags byte sits just before the section's length.
+    const header_at = @intFromPtr(exit_bytes.ptr) - @intFromPtr(bytes.written().ptr) - SECTION_HEADER_LEN;
+    try testing.expectEqualStrings("EXIT", bytes.written()[header_at..][0..4]);
+    try testing.expectEqual(SECTION_REQUIRED, bytes.written()[header_at + 4]);
+    {
+        var w2 = try World.init(testing.allocator, 1024 * 1024);
+        defer w2.deinit();
+        var s2 = SpatialSystem.init(testing.allocator);
+        defer s2.deinit();
+        var stream: std.Io.Reader = .fixed(bytes.written());
+        var loaded = try load_package(testing.allocator, &stream, &w2, &s2);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 1), loaded.exits.items.len);
+        try testing.expectEqualStrings("Door", loaded.exits.items[0].to_mark);
+        try testing.expectEqual(compiled.fingerprint, loaded.fingerprint);
+    }
+    {
+        var w3 = try World.init(testing.allocator, 1024 * 1024);
+        defer w3.deinit();
+        var stream: std.Io.Reader = .fixed(bytes.written());
+        const without = comptime ALL_SECTIONS.differenceWith(SectionSet.initOne(.exits));
+        try testing.expectError(error.UnlinkedSection, load_package_linked(without, testing.allocator, &stream, &w3, null));
     }
 }
 

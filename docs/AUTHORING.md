@@ -391,6 +391,40 @@ A classic parser adventure measures time in turns: `clock: turns` makes the cloc
 
 A larger game can keep its parts apart: `include "art.bespoke"` reads another file in place, once, with paths from the main script's folder (D-169). Keep what is shared, such as scenes and relations, in the main script and give each act or each kind of thing its own file. `proofs/art/lamplighter/` keeps The Lamplighter's Round's art and talk in `art.bespoke` and `talk.bespoke`. An error names the file it is in.
 
+### Rooms
+
+A `room` block says where a scene's marks and props stand on its 320x180 art, which marks walkways join, and where exits lead (P47-11, D-199). Without one, a scene's marks stand in a row, each joined to the next.
+
+```bespoke
+scene Yard:
+  cast: Hero
+  props: Bucket
+  marks: Gate, Well
+
+scene Hall:
+  marks: Door, Hearth
+
+room Yard:
+  mark Gate at 40 120
+  mark Well at 200 132
+  prop Bucket at 214 128
+  walkway Gate to Well
+  exit Well to Hall at Door
+
+room Hall:
+  mark Door at 30 140
+  mark Hearth at 250 140
+  exit Door to Yard at Well
+
+routine Stroll(Hero):
+  walk Hero to Well
+```
+
+- Positions are art pixels, the units `area` uses, so a mark goes where it is painted on the backdrop; the compiler snaps each to within 2 art pixels.
+- Every mark and prop the scene lists needs a line in its room block, and the compiler names the first one missing.
+- A walk that ends on an exit mark moves the player to the other scene. Here the Hero walks to the Well and arrives in the Hall at the Door; walking to the Door again leads back.
+- The Studio's room editor (P47-03) rewrites a room block whole, so comments inside one do not survive an edit there.
+
 ### Pixel art
 
 A script can carry its own art (P46-03 to P46-05). Put the PNG files beside the script and name them; a backdrop draws a scene, a sprite draws a person or prop standing on its spot, and an area makes something painted on the backdrop clickable:

@@ -695,7 +695,11 @@ fn run_bytes_with_presenter(
             } else {
                 try type_inputs(&vm, &compiled, &interp, player_entity, config.input, tick_count, stdout);
             }
+            const walking_before = player_entity != .none and spatial.is_moving(player_entity);
             _ = try bespoke.host.tick(&vm, &compiled);
+            // A walk that ended on a room-block exit mark leaves the scene (D-199).
+            if (walking_before and !spatial.is_moving(player_entity))
+                _ = try bespoke.host.take_any_exit_here(&world, &spatial, &vm, &.{}, &compiled, player_entity);
             try story.report(&world, &vm, stdout);
 
             try timeline.record_run(&world, &spatial, &vm, null);
@@ -818,6 +822,18 @@ fn run_bytes_with_presenter(
                 },
                 .walk_player => |wp_id| {
                     const planned = spatial.walk_to_with_world(&world, player_entity, wp_id) catch false;
+                    // A click on the exit mark underfoot leaves at once, as on every host (D-094).
+                    if (!planned and player_entity != .none and !spatial.is_moving(player_entity)) {
+                        if (try bespoke.host.take_any_exit_here(&world, &spatial, &vm, &.{}, &compiled, player_entity)) |exit| {
+                            announce_scene(&world, &window, exit.to_scene);
+                            timeline.discard_after(cursor);
+                            try timeline.record_run(&world, &spatial, &vm, null);
+                            cursor = timeline.last_index();
+                            display_bridge.capture_frame(&world, &spatial, &vm);
+                            display_bridge.swap();
+                            continue;
+                        }
+                    }
                     if (compiled.turn_clock and player_entity != .none and spatial.is_moving(player_entity)) is_paused = false;
                     var msg_buf: [96]u8 = undefined;
                     if (planned or !spatial.waypoint_blocked(&world, wp_id)) {
@@ -982,7 +998,12 @@ fn run_bytes_with_presenter(
             }
 
             if (should_step_now) {
+                const walking_before = player_entity != .none and spatial.is_moving(player_entity);
                 _ = try bespoke.host.tick(&vm, &compiled);
+                // A walk that ended on a room-block exit mark leaves the scene (D-199).
+                if (walking_before and !spatial.is_moving(player_entity)) {
+                    if (try bespoke.host.take_any_exit_here(&world, &spatial, &vm, &.{}, &compiled, player_entity)) |exit| announce_scene(&world, &window, exit.to_scene);
+                }
                 if (compiled.turn_clock and player_entity != .none and spatial.is_moving(player_entity)) is_paused = false;
                 // The window draws script speech only from a banner, so each tick's `say`
                 // lines are passed to it here (P29-02, D-064).
@@ -1007,6 +1028,14 @@ fn run_bytes_with_presenter(
             io.sleep(.fromMilliseconds(16), .awake) catch {};
         }
     }
+}
+
+/// The window's banner on arriving in `scene` through an exit, in the phrase every host uses.
+fn announce_scene(world: *const World, window: anytype, scene: []const u8) void {
+    var name_buf: [48]u8 = undefined;
+    var buf: [96]u8 = undefined;
+    const name = bespoke.display.dialogue_panel.named(world, scene, &name_buf);
+    window.set_cue_banner(bespoke.phrase.render(world, .arrive_scene, &.{.{ .slot = "scene", .value = name }}, &buf) catch scene, 90);
 }
 
 /// Prints what a headless run's story did on the most recent tick: each `say` line, a change of
@@ -1055,6 +1084,41 @@ pub fn answer_dialogue(vm: *VM, index: usize) !bool {
 // =========================================================================
 // Unit Tests (P15-01, P15-02, P15-03)
 // =========================================================================
+
+test "D-199: a headless run takes a room-block exit when the player's walk ends on its mark" {
+    const testing = std.testing;
+    const src =
+        \\scene Yard:
+        \\  cast: Hero
+        \\  props: Bucket
+        \\  marks: Gate, Well, Shed
+        \\
+        \\scene Hall:
+        \\  marks: Door, Hearth
+        \\
+        \\room Yard:
+        \\  mark Gate at 40 120
+        \\  mark Well at 200 132
+        \\  mark Shed at 120 60
+        \\  prop Bucket at 214 128
+        \\  walkway Gate to Well
+        \\  exit Well to Hall at Door
+        \\
+        \\room Hall:
+        \\  mark Door at 30 140
+        \\  mark Hearth at 250 140
+        \\
+        \\routine Stroll(Hero):
+        \\  walk Hero to Well
+        \\
+    ;
+    var output_buf: [4096]u8 = undefined;
+    var output: std.Io.Writer = .fixed(&output_buf);
+    try run_bytes(testing.allocator, testing.io, "rooms.bespoke", src, .{ .ticks = 40, .is_headless = true, .verbose = false }, &output);
+    const text = output.buffered();
+    // The script names no opening scene, so the run reports only the scene the exit leads to.
+    try testing.expect(std.mem.indexOf(u8, text, "Scene: Hall") != null);
+}
 
 test "P15-01: runner checks and compiles external scenario file" {
     const testing = std.testing;

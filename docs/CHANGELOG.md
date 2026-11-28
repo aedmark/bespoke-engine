@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Room blocks (`P47-11`, `D-198`, `D-199`): `room <Scene>:` places a scene's marks and props in art pixels (`mark Gate at 40 120`, `prop Bucket at 214 128`), joins marks with `walkway A to B`, and declares exits with `exit <Mark> to <Scene> at <Mark>`, so a script alone lays out its rooms and walks between them on the command line, in the desktop window, and in the browser. Positions snap to within 2 art pixels; declared walkways replace the default chain; every listed mark and prop must be placed. Exits travel in a new required `EXIT` package section; scripts without room blocks compile to the same packages as before.
+
 - The Studio makes new images and imports PNGs (`P47-10`, `D-197`): the Art window's New image and Import PNG forms add a transparent sheet or copy a PNG into `art/`, and add one `image ... from` line after the chosen script's last image. The project is checked before the change is kept; an import the compiler would refuse is refused with its reason. Save creates the files and writes the script.
 
 - The Studio paints pixel art (`P47-02`, `D-196`): the Art window lists the images the main script declares, and a Paint window edits a PNG sheet with pencil, eraser, fill, colour picker, zoom, undo, the frame grid, and a preview of the script's own animations. A declared `palette:` limits the colours. Check and Play use an edit at once; Save writes only the PNGs you changed, after checking the engine reads them back as painted. Images written as rows in a script open read-only. `compiler.art_sources` lists a script's images, their files, frames, and animations for tools.

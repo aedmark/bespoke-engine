@@ -1,0 +1,9 @@
+# Once a scene has a room block, every mark it lists needs a position there.
+# pins: D-199
+# expect error: UnexpectedToken 8:1
+
+scene Yard:
+  marks: Gate, Well
+
+room Yard:
+  mark Gate at 40 120

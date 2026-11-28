@@ -127,6 +127,9 @@ pub const CompiledProgram = struct {
     /// Script music in declaration order, as validated MML text (P28-03, D-062).
     scores: std.array_list.Managed(mml.ScoreDecl),
     /// Each cast member's starting mark, in source order (D-065). Empty without a SpatialSystem.
+    /// A script's own exits from its room blocks (P47-11, D-199), in source order; strings
+    /// owned by `chunk.allocator`. Hosts take them after their own `host.Exit` lists.
+    exits: std.ArrayListUnmanaged(spatial_mod.Exit) = .empty,
     cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     /// `where` guards of cue handlers, in source order (D-072). Handlers without one are absent.
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
@@ -154,6 +157,8 @@ pub const CompiledProgram = struct {
     }
 
     pub fn deinit(self: *CompiledProgram) void {
+        for (self.exits.items) |e| for ([_][]const u8{ e.scene, e.mark, e.to_scene, e.to_mark }) |text| self.chunk.allocator.free(text);
+        self.exits.deinit(self.chunk.allocator);
         self.art.deinit_owned(self.chunk.allocator);
         for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
         self.cue_guards.deinit(self.chunk.allocator);
@@ -468,6 +473,19 @@ pub const CompiledProgram = struct {
 /// names in id order, which together fix what every id in the bytecode means. A comment or a
 /// blank line changes neither; any change to what the program does or names changes one. The
 /// package loader recomputes it the same way for packages that predate the field.
+/// A program's exits change how it plays, so they join its identity (D-162, D-199). A program
+/// without any keeps its fingerprint exactly as before.
+pub fn fold_exits(fingerprint: u64, exits: []const spatial_mod.Exit) u64 {
+    if (exits.len == 0) return fingerprint;
+    var h = std.hash.Wyhash.init(fingerprint);
+    for (exits) |e| for ([_][]const u8{ e.scene, e.mark, e.to_scene, e.to_mark }) |text| {
+        h.update(text);
+        h.update(&.{0});
+    };
+    const value = h.final();
+    return if (value == 0) 1 else value;
+}
+
 pub fn program_fingerprint(code: []const u8, world: *const World) u64 {
     var h = std.hash.Wyhash.init(0x6265_7370_6f6b_6531);
     h.update(code);
@@ -641,6 +659,7 @@ pub const Codegen = struct {
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
+    exits: std.ArrayListUnmanaged(spatial_mod.Exit) = .empty,
     cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
     cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty,
@@ -676,6 +695,8 @@ pub const Codegen = struct {
     }
 
     pub fn deinit_owned(self: *Codegen) void {
+        for (self.exits.items) |e| for ([_][]const u8{ e.scene, e.mark, e.to_scene, e.to_mark }) |text| self.chunk.allocator.free(text);
+        self.exits.deinit(self.chunk.allocator);
         for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
         self.cue_guards.deinit(self.chunk.allocator);
         self.cue_handler_chain.deinit(self.chunk.allocator);
@@ -856,12 +877,19 @@ pub const Codegen = struct {
                     try mut_self.check_thing_name(sc_def.name);
                     try mut_self.check_case_twin(sc_def.name);
                     const sent = mut_self.world.lookup_entity(sc_def.name) orelse try mut_self.intern_entity_checked(sc_def.name);
+                    // A room block places the scene's things in art pixels and may replace the
+                    // default chain of walkways (P47-11, D-199); without one, the layout is
+                    // D-100's row, unchanged.
+                    const room: ?parser_mod.RoomDecl = for (ast.rooms) |r| {
+                        if (std.mem.eql(u8, r.scene, sc_def.name)) break r;
+                    } else null;
+                    const chained = if (room) |r| r.walkways.len == 0 else true;
                     var prev_wp: ?u16 = null;
                     var first_wp: ?u16 = null;
                     for (sc_def.marks.items, 0..) |mname, idx| {
                         try mut_self.check_thing_name(mname);
                         try mut_self.check_case_twin(mname);
-                        const wx: i32 = stage_x(idx, sc_def.marks.items.len);
+                        const at: spatial_mod.Point2D = if (room) |r| room_point(r, mname, false) else .{ .x = stage_x(idx, sc_def.marks.items.len), .y = 0 };
                         var found = false;
                         for (sp.graph.waypoints.items) |wp| {
                             if (std.mem.eql(u8, wp.name, mname)) {
@@ -871,21 +899,39 @@ pub const Codegen = struct {
                             }
                         }
                         if (!found) {
-                            const wp_id = try sp.graph.add_waypoint(sent, wx, 0, mname);
+                            const wp_id = try sp.graph.add_waypoint(sent, at.x, at.y, mname);
                             if (prev_wp) |p| {
-                                sp.graph.connect(p, wp_id, null) catch {};
+                                if (chained) sp.graph.connect(p, wp_id, null) catch {};
                             }
                             prev_wp = wp_id;
                         }
                         if (idx == 0) first_wp = prev_wp;
                     }
+                    if (room) |r| for (r.walkways) |w| {
+                        const a = sp.graph.find_waypoint_in_room(sent, w.a) orelse continue;
+                        const b = sp.graph.find_waypoint_in_room(sent, w.b) orelse continue;
+                        sp.graph.connect(a, b, null) catch {};
+                    };
 
                     for (sc_def.props.items, 0..) |pname, idx| {
                         try mut_self.check_thing_name(pname);
                         const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.intern_entity_checked(pname);
-                        const px: i32 = 10 + stage_x(idx, sc_def.props.items.len);
-                        sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
+                        const at: spatial_mod.Point2D = if (room) |r| room_point(r, pname, true) else .{ .x = 10 + stage_x(idx, sc_def.props.items.len), .y = -6 };
+                        sp.add_hotspot(pent, sent, at, 10, pname, pname) catch {};
                     }
+
+                    if (room) |r| for (r.exits) |e| {
+                        const a = mut_self.chunk.allocator;
+                        const scene_name = try a.dupe(u8, sc_def.name);
+                        errdefer a.free(scene_name);
+                        const mark = try a.dupe(u8, e.mark);
+                        errdefer a.free(mark);
+                        const to_scene = try a.dupe(u8, e.to_scene);
+                        errdefer a.free(to_scene);
+                        const to_mark = try a.dupe(u8, e.to_mark);
+                        errdefer a.free(to_mark);
+                        try mut_self.exits.append(a, .{ .scene = scene_name, .mark = mark, .to_scene = to_scene, .to_mark = to_mark });
+                    };
 
                     // A cast member starts on the first mark of the first scene that lists it
                     // (D-065). A scene without marks has nowhere to put anyone.
@@ -1410,7 +1456,8 @@ pub const Codegen = struct {
             .save_version = ast.save_version orelse 1,
             .rewinds_reroll = ast.rewinds_reroll,
             .turn_clock = ast.turn_clock orelse false,
-            .fingerprint = program_fingerprint(mut_self.chunk.code.items, mut_self.world),
+            .fingerprint = fold_exits(program_fingerprint(mut_self.chunk.code.items, mut_self.world), mut_self.exits.items),
+            .exits = mut_self.exits,
             .art = art,
         };
     }
@@ -2829,6 +2876,13 @@ fn check_loop_u16(span: usize) error{JumpOffsetTooLarge}!u16 {
 /// Where the `idx`th of `count` marks (or props, offset by 10) sits along a scene: 20 units
 /// apart from 0, which keeps three within the 1280x720 stage. More than three are spread over
 /// the same 40 units instead, since a fourth at 60 would fall off the right edge (D-100).
+/// Where a room block puts `name` (D-199): its art-pixel position snapped to the world. The
+/// parser has already checked that the block places every mark and prop its scene lists.
+fn room_point(room: parser_mod.RoomDecl, name: []const u8, prop: bool) spatial_mod.Point2D {
+    for (room.places) |p| if (p.prop == prop and std.mem.eql(u8, p.name, name)) return spatial_mod.art_to_world(p.x, p.y);
+    unreachable;
+}
+
 pub fn stage_x(idx: usize, count: usize) i32 {
     const i: i32 = @intCast(idx);
     if (count <= 3) return i * 20;

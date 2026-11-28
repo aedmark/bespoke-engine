@@ -1592,6 +1592,103 @@ test "P48-13: limits raise a ceiling up to its cap, hints may have six tiers, an
     try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
 }
 
+test "D-199: a room block places marks and props in art pixels, and its walkways replace the chain" {
+    const testing = std.testing;
+    const src =
+        \\scene Yard:
+        \\  cast: Hero
+        \\  props: Bucket
+        \\  marks: Gate, Well, Shed
+        \\
+        \\scene Hall:
+        \\  marks: Door, Hearth
+        \\
+        \\room Yard:
+        \\  mark Gate at 40 120
+        \\  mark Well at 200 132
+        \\  mark Shed at 120 60
+        \\  prop Bucket at 214 128
+        \\  walkway Gate to Well
+        \\  exit Well to Hall at Door
+        \\
+        \\room Hall:
+        \\  mark Door at 30 140
+        \\  mark Hearth at 250 140
+        \\
+        \\routine Stroll(Hero):
+        \\  walk Hero to Well
+        \\
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compile_source(testing.allocator, &world, &spatial, src);
+    defer compiled.deinit();
+    const yard = world.lookup_entity("Yard").?;
+    const hall = world.lookup_entity("Hall").?;
+    const gate = spatial.graph.find_waypoint_in_room(yard, "Gate").?;
+    const well = spatial.graph.find_waypoint_in_room(yard, "Well").?;
+    const shed = spatial.graph.find_waypoint_in_room(yard, "Shed").?;
+    try testing.expectEqual(spatial_mod.art_to_world(40, 120), spatial.graph.get_waypoint(gate).?.pos);
+    try testing.expectEqual(spatial_mod.art_to_world(120, 60), spatial.graph.get_waypoint(shed).?.pos);
+    // Only the declared walkway joins the yard's marks: Gate and Well, both ways; Shed stands
+    // apart. The hall declares none, so its marks keep the default chain.
+    var joined: [3]bool = @splat(false);
+    for (spatial.graph.edges.items) |e| {
+        if (spatial.graph.get_waypoint(e.from).?.room != yard) continue;
+        if (e.from == gate and e.to == well) joined[0] = true;
+        if (e.from == well and e.to == gate) joined[1] = true;
+        if (e.from == shed or e.to == shed) joined[2] = true;
+    }
+    try testing.expect(joined[0] and joined[1] and !joined[2]);
+    const door = spatial.graph.find_waypoint_in_room(hall, "Door").?;
+    const hearth = spatial.graph.find_waypoint_in_room(hall, "Hearth").?;
+    var chained = false;
+    for (spatial.graph.edges.items) |e| if (e.from == door and e.to == hearth) {
+        chained = true;
+    };
+    try testing.expect(chained);
+    // The prop's hotspot stands where the block puts it, and the exit is the program's.
+    const bucket = world.lookup_entity("Bucket").?;
+    var found = false;
+    for (spatial.hotspots.items) |hs| if (hs.entity == bucket) {
+        try testing.expectEqual(spatial_mod.art_to_world(214, 128), hs.pos);
+        found = true;
+    };
+    try testing.expect(found);
+    try testing.expectEqual(@as(usize, 1), compiled.exits.items.len);
+    try testing.expectEqualStrings("Well", compiled.exits.items[0].mark);
+    try testing.expectEqualStrings("Hall", compiled.exits.items[0].to_scene);
+    try testing.expectEqualStrings("Door", compiled.exits.items[0].to_mark);
+}
+
+test "D-199: room block refusals name the line and the missing thing" {
+    const testing = std.testing;
+    const head = "scene Yard:\n  marks: Gate, Well\n\nscene Hall:\n  marks: Door\n\n";
+    const Case = struct { body: []const u8, line: u32, says: []const u8 };
+    const cases = [_]Case{
+        .{ .body = "room Yard:\n  mark Gate at 1 1\n", .line = 7, .says = "does not place mark 'Well'" },
+        .{ .body = "room Yard:\n  mark Gate at 1 1\n  mark Well at 2 2\n  mark Pond at 3 3\n", .line = 10, .says = "does not list" },
+        .{ .body = "room Yard:\n  mark Gate at 320 1\n  mark Well at 2 2\n", .line = 8, .says = "outside the 320x180 art" },
+        .{ .body = "room Yard:\n  mark Gate at 1 1\n  mark Well at 2 2\n  exit Gate to Cellar at Door\n", .line = 10, .says = "not a scene" },
+        .{ .body = "room Yard:\n  mark Gate at 1 1\n  mark Well at 2 2\n  exit Gate to Hall at Hearth\n", .line = 10, .says = "not a mark of scene 'Hall'" },
+        .{ .body = "room Yard:\n  mark Gate at 1 1\n  mark Well at 2 2\n  walkway Gate to Door\n", .line = 10, .says = "not a mark of scene 'Yard'" },
+        .{ .body = "room Cellar:\n  mark Gate at 1 1\n", .line = 7, .says = "names no scene" },
+        .{ .body = "room Hall:\n  mark Door at 1 1\n\nroom Hall:\n  mark Door at 2 2\n", .line = 10, .says = "two room blocks" },
+        .{ .body = "room Yard:\n  mark Gate 1 1\n  mark Well at 2 2\n", .line = 8, .says = "expects 'at <x> <y>'" },
+    };
+    for (cases) |c| {
+        var buf: [512]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf, "{s}{s}", .{ head, c.body });
+        const res = check_source(testing.allocator, src);
+        if (res.is_valid or res.line != c.line or std.mem.indexOf(u8, res.message(), c.says) == null) {
+            std.debug.print("case {s}: valid={} line={d} message={s}\n", .{ c.body, res.is_valid, res.line, res.message() });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
 test "D-196: art_sources names each image's script, line, and frames, and its animations" {
     const testing = std.testing;
     const Files = struct {

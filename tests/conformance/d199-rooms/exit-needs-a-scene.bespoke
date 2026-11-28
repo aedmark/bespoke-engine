@@ -1,0 +1,10 @@
+# An exit leads to a declared scene's mark.
+# pins: D-199
+# expect error: UnexpectedToken 10:3
+
+scene Yard:
+  marks: Gate
+
+room Yard:
+  mark Gate at 40 120
+  exit Gate to Cellar at Steps

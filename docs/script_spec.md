@@ -646,6 +646,26 @@ phrase HintRoom: "Seek out the {room}."
 | `PlayerFallback` | You | none |
 | `ThingFallback` | it | none |
 
+### Rooms (P47-11, D-198, D-199)
+
+A `room <Scene>:` block lays out a scene declared with `scene <Scene>:` and links it to other scenes. A scene has at most one.
+
+```text
+room Yard:
+  mark Gate at 40 120
+  mark Well at 200 132
+  prop Bucket at 214 128
+  area Window: 96 40 24 30
+  walkway Gate to Well
+  exit Well to Hall at Door
+```
+
+- `mark <Mark> at <x> <y>` and `prop <Prop> at <x> <y>` place a mark or prop the scene lists, in art pixels on the 320x180 art (x 0 to 319, y 0 to 179). Once a scene has a room block, every mark and prop it lists needs a line there, and naming one it does not list is an error. The compiler snaps each position to the nearest world unit, which is 4.5 art pixels across and 3 down, so a mark sits within 2 art pixels of the spot given.
+- `walkway <Mark> to <Mark>` joins two of the scene's marks both ways. A scene with any walkway line has only its declared walkways; without one, each mark joins the next in its `marks:` order, as before.
+- `exit <Mark> to <Scene> at <Mark>`: a plain walk that ends on the first mark takes the player to the other scene, standing on the second mark; a walk asked for while standing on it leaves at once (D-094). A mark has at most one exit. Exits work on the command line, in the desktop window, and in the browser; a host's own exits are taken first.
+- `area <Prop>: x y w h` is the line described under pixel art; it may sit in the room block or at top level.
+- A name in a room line is words up to `at` or `to`; quote one that holds either word or a character a word cannot (`exit "Way to Town" to Town at Gate`).
+
 ### Pixel art (P46-03, D-152, D-155, D-166)
 
 A script can declare its own pixel art: images in full colour from PNG files or written as rows of palette codes, a backdrop per scene, and a sprite sheet for a person or prop with its animations. Art pixels are opaque or fully transparent.
@@ -740,6 +760,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Looks and parts (P48-11) | `P48-11: looks and parts compile, and their mistakes are named` (`src/compiler.zig`); `tests/conformance/d181-looks/` | `P48-11: a Looks fact picks what a thing shows, and a part is drawn above and clicked as its host` (`src/display/renderer.zig`); `P48-11: a package carries looks and parts, and refuses a part hosted by itself` (`src/package.zig`); the Lamplighter's lamps and the `lamplighter` render golden lines (`proofs/`) |
 | Pixel art (P46-03) | `P46-03: art declarations compile into the program with their bindings`; `P46-03: art mistakes are reported on their own line` (`src/compiler.zig`) | `P48-17: every part of a program round-trips through its own section, byte for byte` (`src/package.zig`); `P46-03: the image stage's script declares its art and compiles it into the program` and the `image_stage/replay` render golden lines (`proofs/`) |
 | Colour cycling (P49-01) | `P49-01: colour cycles compile with explicit or default intervals and reject invalid declarations` (`src/compiler.zig`); `tests/conformance/d190-colour-cycling/` | `P49-01: colour cycles rotate forward and validate bounds and disjoint RGBs` (`src/image.zig`); `P49-01: draw_image_cycled rotates cycled palette pixels forward and keeps uncycled and transparent pixels untouched` (`src/display/canvas.zig`); `P49-01: desktop and browser draw identical cycled frames and leave world and saves unchanged` (`src/wasm.zig`); `P49-01: colour cycles round-trip in optional CYCL section and 1.0 readers skip it cleanly` (`src/package.zig`) |
+| Room blocks (P47-11) | `D-199: a room block places marks and props in art pixels, and its walkways replace the chain` and `D-199: room block refusals name the line and the missing thing` (`src/compiler.zig`); `tests/conformance/d199-rooms/` | `D-199: art pixels snap to the nearest world unit` (`src/spatial.zig`); `D-199: art_to_world inverts world_to_screen within half a unit` (`src/display/renderer.zig`); the D-199 exit tests in `src/runner.zig`, `src/host.zig`, `src/wasm.zig`, and `src/package.zig` |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P48-17: every part of a program round-trips through its own section, byte for byte` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

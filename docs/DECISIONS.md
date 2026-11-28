@@ -2483,6 +2483,44 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** appending at the end of the script, rejected because art lines drift apart; converting partial alpha and off-palette colours on import, rejected because D-156 keeps art mapped as drawn; offering a backdrop or sprite binding, deferred to the editors that own those blocks.
 
+## D-198 Rooms Are Laid Out in the Script, in Art Pixels, Before the Room Editor Writes Them (2026-11-27, status: accepted; P47-03, P47-11)
+
+**Context.** P47-03 is the Studio's room editor: a backdrop, marks, props and hotspots, exits, walkways, and the optional grid, written as the scene's declarations (D-151 item 6). Scoping it found that the language cannot yet say any of this. The compiler places a scene's marks 20 world units apart on one row and joins them in a chain (`codegen.stage_x`, D-100); props sit at fixed offsets; only `area` (art pixels, D-158) and a grid's `place` position anything. Exits exist only in Zig host code (`Deck.exits`, `host.add_exit_marks`, D-094), so a `bespoke init` game cannot walk between rooms without Zig. The engine's world maps to the frame at 18 by 12 frame pixels per unit, which is 4.5 by 3 art pixels, so art pixels and world units do not meet on whole numbers. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **Language first.** Room declarations become their own item, P47-11, ahead of the editor: positions for marks and props, walkways between marks, and exits, with compiler, package, desktop, browser, CLI, authoring guide, and manual support. P47-03 then becomes the editor that writes them.
+2. **Art pixels.** Positions in scripts are x and y on the 320x180 art, as `area` is, so a mark sits where it is painted on a backdrop and the editor places it where the author clicks. How the engine maps art pixels to its world (or moves its world to art pixels) is settled when P47-11 starts.
+3. **Exits in scripts.** A script can declare an exit from a mark to a scene and mark. A package carries them in a new optional section, the D-172 rule for format changes after 1.0. Host `Deck.exits` keeps working.
+4. **One block per scene for the editor.** The room editor owns one top-level block per scene and rewrites that block whole; it never edits lines elsewhere. Comments inside that block are not kept, which the authoring guide will say. P47-11 defines the block, so a hand-written script and the editor's output are the same language.
+
+**Consequences.** Scripts without room declarations keep today's layout, so no existing game, golden, or package changes. P47-11 needs its own scoping talk for the syntax, the mapping, how walkways replace the default chain, and what a mark without a position does in a scene that positions others.
+
+**Alternatives:** one item for both the language and the editor, rejected to keep two reviewable changes and to design the syntax for hand-written scripts first; world units, rejected because they do not meet art pixels on whole numbers; leaving exits to hosts, rejected because a script-only game could not walk between rooms; editing lines in place across a scene's declarations, rejected because those lines can sit anywhere, across included files.
+
+## D-199 Room Blocks: Positions Snap to the World, Declared Walkways Replace the Chain, Every Thing Placed (2026-11-27, status: accepted; P47-11, follows D-198)
+
+**Context.** D-198 put room layout into the language ahead of the room editor, in art pixels, with script exits and one block per scene, and left four points for P47-11's scoping. The engine's world is 18 by 12 frame pixels per unit at 1280x720 (`renderer.world_to_screen`), so one unit is 4.5 art pixels across and 3 down. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **Syntax.** One top-level block per scene:
+   ```
+   room Courtyard:
+     mark Gate at 40 120
+     mark Well at 200 132
+     prop Bucket at 214 128
+     area Window: 96 40 24 30
+     walkway Gate to Well
+     exit Gate to Guardhouse at Door
+   ```
+   `mark` and `prop` lines place things the scene already lists; `area` is the existing line (D-158), which may still be written at top level; `walkway A to B` joins two marks both ways; `exit <Mark> to <Scene> at <Mark>` leaves when a plain walk ends on the mark, as host exits do (D-094). Names follow the language's name rules (quoted when they need to be). A scene has at most one room block.
+2. **Snap to the world.** The compiler rounds each art-pixel position to the nearest world unit; marks, walking people, hit tests, saves, and pathfinding are unchanged, and the room editor shows the snapped spot. A mark can sit up to 2 art pixels (9 frame pixels) off the painted spot sideways and 1.5 down. A position outside the 320x180 art is refused.
+3. **Declared walkways replace the chain.** A scene whose room block has any `walkway` line uses only its declared walkways; with none, the default chain of D-100 stays.
+4. **Every thing placed.** Once a scene has a room block, every mark and prop the scene lists needs a `mark` or `prop` line there, and the error names the first one missing; placing a name the scene does not list is also an error.
+
+**Consequences.** Built 2026-11-27 (session 132): 64 existing scripts compile to byte-identical packages with and without the change, and every golden is unchanged. The browser modules grew by 16 to 18 KB each (`bespoke.wasm` 631,231 to 648,289 bytes, `bespoke-proofs.wasm` 1,063,966 to 1,081,474), mostly the parser's new refusals, within D-159's 1.5 MiB. With no scene named, an exit reads the player's own room as the scene on stage, as the browser already shows it (D-071), since the command line keeps no scene of its own. A script's exits join its fingerprint only when it has some, so every existing fingerprint is unchanged. Mark positions already live in the spatial graph that packages carry, so positions and walkways need no format change; exits need the optional section D-198 item 3 named, and a reader without it refuses the package by name (D-187). A script without room blocks compiles exactly as before, so goldens and packages of existing games stay byte-identical, which the item must show. The authoring guide, the spec, and the manual gain the block; `AUTHORING.md` says the room editor rewrites a room block whole and drops comments inside it (D-198 item 4).
+
+**Alternatives:** exact art-pixel positions throughout the engine, rejected as a much larger change to spatial, rendering, hit tests, saves, and packages for at most 2 art pixels; walkways added to the chain, rejected because two marks could never be kept apart; unplaced marks on their default spot, rejected because it rarely matches a painted backdrop.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

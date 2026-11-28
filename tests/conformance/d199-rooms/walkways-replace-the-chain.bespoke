@@ -1,0 +1,22 @@
+# A scene with walkway lines has only those: Shed joins nothing, so the walk there fails.
+# pins: D-199
+# ticks: 12
+# expect no fact: Reached(Hero)
+
+scene Yard:
+  cast: Hero
+  marks: Gate, Shed, Well
+
+room Yard:
+  mark Gate at 40 120
+  mark Shed at 120 60
+  mark Well at 200 132
+  walkway Gate to Well
+
+relation Reached(who)
+
+when Hero arrives at Shed:
+  remember Reached(Hero)
+
+routine Stroll(Hero):
+  walk Hero to Shed
