@@ -2649,6 +2649,21 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a separate page module, rejected because a third module would take the Studio page past its 2 MiB budget for no gain the author can see; a Studio shell, rejected so exports match games built from projects; writing into the project, rejected for now because a download needs no permission and works in every browser.
 
+## D-208 A Script's Transition Brings the Player Along (2026-11-28, status: accepted; P49-07)
+
+**Context.** `transition to scene X` changes `VM.current_scene`, the room the window shows, but moves no one. Typed commands resolve nouns in the player's room, its waypoint's room before the current scene (`host.command_room`), so a player who is a cast or routine actor stays in the old room: in `scenarios/night_watch.bespoke`, after the Warden climbs to the Rampart, "use beacon" answered `I don't know the word "beacon".` Proofs that transition from Zig place their own players (`lamp_point.follow_into_scene`, `valerius.follow_into_spring`), and The Sunken Vault avoids it by playing as the stage actor `Scene`, which has no place on the map. The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. After each tick, a host brings its player along when the script's own `transition to scene` named a room the player is not standing in: `host.follow_transition` places the player on that room's first mark (`SpatialSystem.transition_actor`). The runner, `Session`, and the browser runtime call it.
+2. Only the statement counts. The `transition_scene` opcode sets `VM.script_transition`; `VM.transition_to_scene` called from Zig does not, so a host that moves its own player keeps doing so.
+3. A top-level `transition` picks the room the game opens on and moves no one: `start_script` clears the flag, since cast lists have already placed everyone.
+4. It runs after the exit check, and a pending walk to act on something is dropped: being placed is not arriving (D-036), so a player set down on a doorway mark does not walk back out through it.
+5. A player with no place on the map (the stage actor) and a room with no marks are left alone.
+
+**Consequences.** Scripts like `night_watch.bespoke` play as written; the 19 proof goldens and every package are unchanged. The flag is consumed after the tick that set it, so saves and snapshots carry nothing new. Pinned by a host test and `tests/conformance/d208-transitions/`.
+
+**Alternatives:** an explicit `transition <Actor> to scene X` form, rejected for now because existing scripts would stay broken until edited; moving the player whenever the current scene differs from its room, rejected because watching another room (D-139, The Long Gallery) keeps the player where they stand.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

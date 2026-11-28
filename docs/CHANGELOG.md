@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A script's `transition to scene` brings the player along (`P49-07`, `D-208`): a player who is a cast or routine actor is placed on the new room's first mark after the tick, so typed commands and clicks act in the room the window shows. The stage actor and Zig hosts that place their own players are unchanged.
+
 - The Studio exports the game as one page (`P47-07`, `D-207`): Export page in the Project menu builds the project and downloads `<game>.html`, the stage or text page `bespoke init` writes, with the game and its runtime inside and the license kept, so it opens from disk and plays like the Play window. Nothing in the project changes. Hosts gain `Deck.keyed`, which keeps a deck off the number keys.
 
 - The Studio writes dialogue (`P47-14`, `D-206`): in the Dialogue window, a `dialogue` block opens as a form of its lines with indent and outdent buttons, and the map beside it redraws as you type. Apply rewrites the block, checked before it is kept; New dialogue starts from a template.

@@ -75,7 +75,7 @@ Routine, cue, rule, dialogue-choice, and `during` bodies accept these statements
 | `interrupt Actor with:` | Push its indented body over the actor's current routine. |
 | `say Speaker: "text"`, `say Speaker to Listener: "text"` | Emit speech; the listener phrase is narrative and does not change dispatch. Parenthesized or unquoted text is also accepted. |
 | `animate Clip`, `animate(Target, Clip)`, `stop animate Clip` | Emit animation cues. The one-name forms target `Scene`. |
-| `transition to scene Name` | Change the active scene. A colon after `scene` is optional. |
+| `transition to scene Name` | Change the active scene. A colon after `scene` is optional. After the tick, the host places a player who stands in another room on the scene's first mark (D-208); a top-level `transition` only picks the opening room. |
 | `choice ...` | Open the consecutive choice set described below. |
 | `resume ...`, `done` | End an interruption body and resume the interrupted routine; words after `resume` are descriptive. |
 | `weave Draft on Target` | Cast a declared musical draft. |

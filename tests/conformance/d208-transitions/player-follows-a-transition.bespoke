@@ -1,0 +1,28 @@
+# A script's transition brings the player along, so typed commands act in the new room.
+# pins: D-208
+# ticks: 6
+# input: 1 use stair door
+# input: 3 use beacon
+# expect line: Warden: "The beacon is cold."
+# expect fact: Lit(Warden)
+
+scene Gatehouse:
+  cast: Warden
+  props: StairDoor
+  marks: Gate, Stair
+
+scene Rampart:
+  props: Beacon
+  marks: Tower
+
+relation Lit(who)
+
+routine Watch(Warden):
+  wait 100 ticks
+
+on cue Uses(Warden, StairDoor):
+  transition to scene Rampart
+
+on cue Uses(Warden, Beacon):
+  say Warden: "The beacon is cold."
+  remember Lit(Warden)

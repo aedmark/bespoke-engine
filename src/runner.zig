@@ -700,6 +700,8 @@ fn run_bytes_with_presenter(
             // A walk that ended on a room-block exit mark leaves the scene (D-199).
             if (walking_before and !spatial.is_moving(player_entity))
                 _ = try bespoke.host.take_any_exit_here(&world, &spatial, &vm, &.{}, &compiled, player_entity);
+            // After the exit check, so a player set down on a doorway stays (D-208).
+            _ = try bespoke.host.follow_transition(&vm, &spatial, player_entity);
             try story.report(&world, &vm, stdout);
 
             try timeline.record_run(&world, &spatial, &vm, null);
@@ -1004,6 +1006,8 @@ fn run_bytes_with_presenter(
                 if (walking_before and !spatial.is_moving(player_entity)) {
                     if (try bespoke.host.take_any_exit_here(&world, &spatial, &vm, &.{}, &compiled, player_entity)) |exit| announce_scene(&world, &window, exit.to_scene);
                 }
+                // After the exit check, so a player set down on a doorway stays (D-208).
+                _ = try bespoke.host.follow_transition(&vm, &spatial, player_entity);
                 if (compiled.turn_clock and player_entity != .none and spatial.is_moving(player_entity)) is_paused = false;
                 // The window draws script speech only from a banner, so each tick's `say`
                 // lines are passed to it here (P29-02, D-064).

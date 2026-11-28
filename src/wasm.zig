@@ -1456,6 +1456,10 @@ pub const WasmRuntime = struct {
             _ = try host_mod.tick(&self.vm, program);
             self.show_story();
             try self.take_exit(walking_before);
+            // After the exit check: being placed is not arriving, so a player set down on a
+            // doorway mark does not walk straight back out through it (D-036, D-208).
+            // A walk to act on something in the room left behind is dropped with it.
+            if (try host_mod.follow_transition(&self.vm, &self.spatial, self.player_entity)) self.approach = null;
             self.sync_audio();
         } else {
             try self.vm.step_tick();

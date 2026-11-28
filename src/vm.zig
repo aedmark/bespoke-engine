@@ -252,6 +252,11 @@ pub const VM = struct {
     emitted_cues: std.array_list.Managed(EmittedCue),
     reactive_rules: std.array_list.Managed(ReactiveRule),
     current_scene: ?EntityId = null,
+    /// The scene a script's own `transition to scene` statement named this tick, for the host
+    /// to bring its player along (`host.follow_transition`, P49-07, D-208). A host calling
+    /// `transition_to_scene` from Zig moves its own player, so only the opcode sets it. It is
+    /// consumed after the tick that set it, so no save or snapshot needs to carry it.
+    script_transition: ?EntityId = null,
     /// The run's dice (D-168, D-184). `branch_dice`, when the host binds the VM to a live
     /// branch world, points at the branch's own generator in the hypervisor, so a branch's
     /// rolls never move the present's.
@@ -1445,6 +1450,7 @@ pub const VM = struct {
                 .transition_scene => {
                     const target_scene_val = try read_u32(code, &f.pc);
                     try self.transition_to_scene(EntityId.from_int(target_scene_val));
+                    self.script_transition = EntityId.from_int(target_scene_val);
                 },
 
                 // --- Preemption & Interruption (P2-04, D-004) ---

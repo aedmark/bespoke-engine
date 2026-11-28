@@ -679,6 +679,9 @@ pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *
     try run_initial_statements(world, vm, compiled);
     try place_cast(spatial, compiled);
     try spawn_script_routines(world, spatial, vm, compiled);
+    // A top-level `transition` picks the room the game opens on; the cast lists have already
+    // placed everyone, so the player is not carried there (D-208).
+    vm.script_transition = null;
     return world.intern_entity(player_actor(compiled) orelse "Player");
 }
 
@@ -988,6 +991,22 @@ pub fn take_exit_here(world: *const World, spatial: *SpatialSystem, vm: *VM, exi
     return null;
 }
 
+/// Brings the player along after a tick in which the script's `transition to scene` moved the
+/// stage to a room the player is not standing in (P49-07, D-208): the player is placed on that
+/// room's first mark, so typed commands and clicks act in the room the window shows. A player
+/// with no place on the map (the stage actor `Scene`) and a room with no marks are left alone.
+/// Returns true when the player moved. Call after every tick, beside the exit check.
+pub fn follow_transition(vm: *VM, spatial: *SpatialSystem, player: EntityId) !bool {
+    const scene = vm.script_transition orelse return false;
+    vm.script_transition = null;
+    if (player == .none) return false;
+    const wp = spatial.get_current_waypoint(player) orelse return false;
+    const here = (spatial.graph.get_waypoint(wp) orelse return false).room;
+    if (here == scene) return false;
+    if (spatial.graph.get_first_waypoint_in_room(scene) == null) return false;
+    return spatial.transition_actor(player, scene, null);
+}
+
 /// Takes an exit on the mark `player` stands on: the host's own `exits` first, then the
 /// exits the script declares in its room blocks (P47-11, D-199). Returns the exit taken.
 pub fn take_any_exit_here(world: *const World, spatial: *SpatialSystem, vm: *VM, exits: []const Exit, compiled: *const CompiledProgram, player: EntityId) !?Exit {
@@ -1275,6 +1294,11 @@ pub const Session = struct {
                 _ = try self.leave_through(p);
             };
         }
+        // After the exit check: a player set down on a doorway mark stays there (D-208).
+        // A walk to act on something in the room left behind is dropped with it.
+        if (self.player) |p| if (try follow_transition(self.vm, self.spatial, p)) {
+            self.window.approach = null;
+        };
         try self.record_snapshot();
         self.cursor = self.timeline.last_index();
         self.refresh();
@@ -2234,6 +2258,77 @@ test "D-100: a doorway mark is added on stage, and a walk ending on it, or asked
     try testing.expect(try session.walk_player(hatch));
     try testing.expectEqual(quay, vm.current_scene.?);
     try testing.expectEqual(gangway, spatial.agents.get(hero).?.current_wp);
+}
+
+test "P49-07: a script's transition brings the player along, and typed commands follow it" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene Gatehouse:
+        \\  cast: Warden
+        \\  props: StairDoor
+        \\  marks: Gate, Stair
+        \\
+        \\scene Rampart:
+        \\  props: Beacon
+        \\  marks: Tower
+        \\
+        \\transition to scene Rampart
+        \\
+        \\routine Watch(Warden):
+        \\  wait 100 ticks
+        \\
+        \\on cue Uses(Warden, StairDoor):
+        \\  transition to scene Rampart
+        \\
+        \\on cue Uses(Warden, Beacon):
+        \\  transition to scene Gatehouse
+    );
+    defer compiled.deinit();
+    const gatehouse = world.lookup_entity("Gatehouse").?;
+    const rampart = world.lookup_entity("Rampart").?;
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    const warden = try start_script(&world, &spatial, &vm, &compiled);
+    const room_of = struct {
+        fn get(sp: *SpatialSystem, who: EntityId) EntityId {
+            return sp.graph.get_waypoint(sp.get_current_waypoint(who).?).?.room;
+        }
+    }.get;
+    // The opening transition picks the window's room; the cast list keeps the Warden home.
+    try testing.expectEqual(rampart, vm.current_scene.?);
+    try testing.expectEqual(gatehouse, room_of(&spatial, warden));
+    try vm.transition_to_scene(gatehouse);
+    try testing.expect(vm.script_transition == null);
+
+    _ = (try vm.fire_cue(&compiled, "Uses", warden, world.lookup_entity("StairDoor").?, null)).?;
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(rampart, vm.current_scene.?);
+    try testing.expect(try follow_transition(&vm, &spatial, warden));
+    try testing.expectEqual(rampart, room_of(&spatial, warden));
+    try testing.expectEqual(spatial.graph.find_waypoint_in_room(rampart, "Tower").?, spatial.get_current_waypoint(warden).?);
+    try testing.expect(!try follow_transition(&vm, &spatial, warden));
+
+    // Typed nouns now resolve in the Rampart, where the window is.
+    var interp = command_mod.Interpreter{};
+    var buf: [160]u8 = undefined;
+    switch (interpret_command(&vm, &compiled, &interp, warden, "use beacon", &buf)) {
+        .command => |c| try testing.expectEqual(world.lookup_entity("Beacon").?, c.a.?),
+        .reply => |r| return std.debug.panic("unexpected reply: {?s}", .{r}),
+    }
+    // And back again; a player already in the room stays on its mark.
+    _ = (try vm.fire_cue(&compiled, "Uses", warden, world.lookup_entity("Beacon").?, null)).?;
+    _ = try tick(&vm, &compiled);
+    try testing.expect(try follow_transition(&vm, &spatial, warden));
+    try testing.expectEqual(gatehouse, room_of(&spatial, warden));
+    // The stage actor has no place on the map, so it is never moved.
+    vm.script_transition = rampart;
+    try testing.expect(!try follow_transition(&vm, &spatial, try world.intern_entity(STAGE_ACTOR)));
+    try testing.expect(vm.script_transition == null);
 }
 
 test "D-199: a desktop session takes the script's own room exits, both ways" {

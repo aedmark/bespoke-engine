@@ -93,7 +93,7 @@ routine Day(Hero):
 
 ## 3. Walkthrough: a scene
 
-A `scene` block declares a room and what is in it. `cast` are people, `props` are things to look at and use, and `marks` are the places people stand and walk between. Each cast member starts on the first mark of the first scene that lists it; an actor no scene lists starts on the script's first mark. `transition to scene X` changes the room the window shows.
+A `scene` block declares a room and what is in it. `cast` are people, `props` are things to look at and use, and `marks` are the places people stand and walk between. Each cast member starts on the first mark of the first scene that lists it; an actor no scene lists starts on the script's first mark. `transition to scene X` changes the room the window shows, and the player goes with it, onto the first mark of X (D-208); the opening `transition` only picks the first room.
 
 <!-- example: scene -->
 ```bespoke
