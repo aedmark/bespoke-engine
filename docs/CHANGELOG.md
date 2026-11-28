@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio shows which line wrote a fact (`P47-09`, `D-205`): the Play window's Facts panel lists the running game's facts, and Show line opens the `remember` line that wrote one, lists the lines that could have when several might, or names the engine system that writes it and the decision or dilemma behind a `Chose`. Nothing changes in the engine or in shipped games.
+
 - The Studio maps dialogue (`P47-04`, `D-204`): the Dialogue window draws each conversation's choices as a tree, with what is said in boxes and each choice's guard on its arrow, and a click opens the script at that line. A choice whose guard nothing in the script can make true is marked, and `bespoke check` now warns about it. Writing dialogue is `P47-14`.
 
 - The Studio edits dilemmas and red lines (`P47-13`, `D-203`): the Dilemmas window holds every line of a dilemma in a form (clauses as typed text) and rewrites its block whole, checked; a preview gives the tier, spoken line, and action for the actor's values and the leans that count, with the engine's own arithmetic. In the Cast window, a character's decision options are a red-lines checklist. `compiler.dilemma_sources` lists these for tools.

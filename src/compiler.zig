@@ -696,6 +696,61 @@ pub fn dialogue_sources(arena: std.mem.Allocator, source: []const u8, files: ?Fi
     return out.items;
 }
 
+/// A `remember` statement anywhere in a script, for finding the lines that could have written a
+/// fact (P47-09, D-205): its relation and arguments as written, and where it is.
+pub const WriterLine = struct { relation: []const u8, args: []const []const u8, at: ScriptLines };
+/// A declaration whose engine system writes facts: a decision, dilemma, or agenda.
+pub const WriterDecl = struct { kind: []const u8, name: []const u8, at: ScriptLines };
+pub const WriterSources = struct { remembers: []const WriterLine, declarations: []const WriterDecl };
+
+/// Parses `source` far enough to list every `remember` line and the declarations whose systems
+/// write facts (P47-09, D-205), as `cast_sources` does.
+pub fn writer_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) !WriterSources {
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    const Walk = struct {
+        e: includes.Expanded,
+        a: std.mem.Allocator,
+        out: std.ArrayList(WriterLine) = .empty,
+        fn walk(w: *@This(), stmts: []const parser.Stmt) !void {
+            for (stmts) |st| switch (st) {
+                .remember => |r| {
+                    const at = w.e.locate(r.line);
+                    try w.out.append(w.a, .{ .relation = r.relation, .args = r.args, .at = .{ .script = at.file, .line = at.line, .end_line = at.line } });
+                },
+                .loop_stmt => |b| try w.walk(b),
+                .if_stmt => |x| try w.walk(x.body),
+                .interrupt_with => |x| try w.walk(x.body),
+                .choice_block => |cs| for (cs) |c| try w.walk(c.body),
+                else => {},
+            };
+        }
+    };
+    var w = Walk{ .e = expanded, .a = arena };
+    try w.walk(ast.initial_stmts.items);
+    for (ast.routines.items) |r| try w.walk(r.body);
+    for (ast.cue_handlers.items) |h| try w.walk(h.body);
+    for (ast.when_rules.items) |r| try w.walk(r.body);
+    for (ast.paths.items) |pd| {
+        try w.walk(pd.facts);
+        for (pd.routines) |r| try w.walk(r.body);
+    }
+    var decls: std.ArrayList(WriterDecl) = .empty;
+    for (ast.decisions.items) |d| {
+        const at = expanded.locate(d.line);
+        try decls.append(arena, .{ .kind = "decision", .name = d.name, .at = .{ .script = at.file, .line = at.line, .end_line = at.line } });
+    }
+    for (ast.dilemmas.items) |d| {
+        const at = expanded.locate(d.line);
+        try decls.append(arena, .{ .kind = "dilemma", .name = d.name, .at = .{ .script = at.file, .line = at.line, .end_line = at.line } });
+    }
+    return .{ .remembers = w.out.items, .declarations = decls.items };
+}
+
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
     return check_source_with(allocator, source, null);
 }
@@ -2122,6 +2177,35 @@ test "D-199: room block refusals name the line and the missing thing" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "D-205: writer_sources lists every remember line and the declarations that write facts" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Quay:
+        \\  cast: Hero, Guide
+        \\
+        \\relation Paid(who)
+        \\remember Paid(Guide)
+        \\
+        \\on cue TalksTo(Hero, Guide):
+        \\  choice "Pay.":
+        \\    remember Paid(Hero)
+        \\
+        \\routine Idle(who):
+        \\  remember Paid(who)
+        \\
+    ;
+    const w = try writer_sources(arena.allocator(), src, null);
+    try testing.expectEqual(@as(usize, 3), w.remembers.len);
+    try testing.expectEqual(@as(u32, 5), w.remembers[0].at.line);
+    // Top level, then routines, then handlers.
+    try testing.expectEqual(@as(u32, 12), w.remembers[1].at.line);
+    try testing.expectEqualStrings("who", w.remembers[1].args[0]);
+    try testing.expectEqual(@as(u32, 9), w.remembers[2].at.line);
+    try testing.expectEqualStrings("Hero", w.remembers[2].args[0]);
 }
 
 test "D-204: dialogue_sources gives each conversation's tree with guards, lines, and never-holding marks" {

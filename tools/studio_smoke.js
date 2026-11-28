@@ -38,7 +38,10 @@
 //      command line plays the saved dilemma to the previewed tier's line;
 //  13. (P47-04, D-204) the Dialogue window maps a conversation's choices, nested sets, and
 //      guards, marks a guard nothing writes (which the CLI's check also warns about), and opens
-//      the script at a clicked choice.
+//      the script at a clicked choice;
+//  14. (P47-09, D-205) the Play window's Facts panel lists a running game's facts, and Show
+//      line opens the one line that wrote a fact, lists two lines that could have, and names
+//      the engine system and the dilemma behind a Chose fact.
 'use strict';
 
 const fs = require('fs');
@@ -861,6 +864,52 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  dialogue map: ${nodes.length} nodes over three depths, the never-offered guard marked, a click opens line 13; ${talkCli}`);
+
+    // 14. Facts and their writers.
+    const FACT_SRC = [
+      'scene Court:', '  cast: Valerius, Thief', '', 'relation Accused(who)', 'relation Criminal(who)', 'relation Seen(who)',
+      'axis Justice between Cruelty and Leniency', 'axis Mercy between Vengeance and "Condoning Harm"', 'remember Justice(Valerius, 4)', '',
+      'dilemma StolenBread:', '  actor Valerius', '  fires Judged', '  requires Accused(Thief)', '  weighs Justice against Mercy',
+      '  strong Justice: "The law is the law." -> Hang', '  moderate Justice: "A night in the cells." -> Jail', '  neutral: "Show me why." -> Wait',
+      '  moderate Mercy: "Pay for the loaf." -> Fine', '  strong Mercy: "Let him go." -> Free', '',
+      'routine Watch(Thief):', '  wait 1 ticks', '  remember Criminal(Thief)', '  remember Accused(Thief)', '  remember Seen(Thief)', '',
+      'routine Look(Valerius):', '  wait 2 ticks', '  remember Seen(Thief)', '',
+    ].join('\n');
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(FACT_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.play().then(() => true)');
+    await waitFor('the court running', async () => ((await state()).play.tick >= 4 ? true : null));
+    await evaluate("window.bespokeStudio.playGadget('play-facts')");
+    const factList = await waitFor('the facts', async () => {
+      const f = (await state()).play.facts;
+      return f.includes('Criminal(Thief)') && f.includes('Chose(StolenBread, Jail)') ? f : null;
+    });
+    const factId = (text) => `fact:${factList.indexOf(text)}`;
+    // One writer: the script opens at it (line 24).
+    await evaluate(`window.bespokeStudio.playGadget(${JSON.stringify(factId('Criminal(Thief)'))})`);
+    await waitFor('Criminal opened', async () => ((await state()).windows.includes('script:main.bespoke') ? true : null));
+    let factMarked = await evaluate("document.querySelector('[data-window=\"script:main.bespoke\"] .mark .sr').textContent");
+    if (!/^24\b/.test(factMarked.trim())) throw new Error(`Criminal(Thief) opened ${JSON.stringify(factMarked)}`);
+    // Two writers: both are offered.
+    await evaluate(`window.bespokeStudio.playGadget(${JSON.stringify(factId('Seen(Thief)'))})`);
+    await requester('Seen(Thief)');
+    const seenButtons = await evaluate("[...document.querySelectorAll('.req-buttons .gad')].map((b) => b.textContent.trim())");
+    if (!seenButtons.some((t) => t.includes('main.bespoke:26')) || !seenButtons.some((t) => t.includes('main.bespoke:30'))) throw new Error(`Seen(Thief) offered ${JSON.stringify(seenButtons)}`);
+    await key('Escape', 'Escape', 27);
+    await noRequester();
+    // An engine fact: its system, and the dilemma that drove it.
+    await evaluate(`window.bespokeStudio.playGadget(${JSON.stringify(factId('Chose(StolenBread, Jail)'))})`);
+    await requester('Chose(StolenBread, Jail)');
+    const choseText = await evaluate("document.querySelector('.req').textContent");
+    if (!/decisions and dilemmas/.test(choseText)) throw new Error(`Chose named no system: ${choseText}`);
+    await evaluate("[...document.querySelectorAll('.req-buttons .gad')].find((b) => /dilemma StolenBread/.test(b.textContent)).click(); true");
+    await noRequester();
+    await waitFor('the dilemma line', async () => {
+      const t = await evaluate("(document.querySelector('[data-window=\"script:main.bespoke\"] .mark .sr') || {}).textContent || ''");
+      return /^11\b/.test(t.trim()) ? true : null;
+    });
+    await evaluate("window.bespokeStudio.playGadget('play-pause')");
+    console.log(`ok  facts: ${factList.length} live facts listed; Show line opens line 24, offers lines 26 and 30, and names the engine and dilemma StolenBread for Chose`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

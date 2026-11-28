@@ -65,6 +65,8 @@ pub const Stmt = union(enum) {
         relation: []const u8,
         args: []const []const u8,
         ttl_ticks: u32,
+        /// The `remember` line, in the expanded text, for a fact's writer (P47-09, D-205).
+        line: u32 = 0,
     },
     forget: struct {
         relation: []const u8,
@@ -3866,6 +3868,7 @@ pub const Parser = struct {
     }
 
     fn parse_remember_stmt(self: *Parser) !Stmt {
+        const remember_line: u32 = @intCast(self.current.line);
         try self.advance(); // consume 'remember'
         if (self.current.tag == .colon) try self.advance();
         const pat = try self.parse_fact_pattern();
@@ -3881,6 +3884,7 @@ pub const Parser = struct {
                 .relation = pat.relation,
                 .args = pat.args,
                 .ttl_ticks = ttl,
+                .line = remember_line,
             },
         };
     }

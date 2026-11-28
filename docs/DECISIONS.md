@@ -2592,6 +2592,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** the language and editor in one item, rejected to keep reviewable changes and to design a dialogue block for hand-written scripts first; editing choice statements in place, rejected because it reverses D-202 for one kind of statement; computing the rule only in the Studio, rejected because the command line would stay silent about a choice no player can see; an indented outline, rejected because nested sets read better as a tree.
 
+## D-205 A Fact's Writer Is Found in the Script, Not Recorded at Run Time (2026-11-27, status: accepted; P47-09, follows D-195)
+
+**Context.** P47-09, split from P47-06 (D-195 item 6), jumps from a fact in the playing game to the script line that wrote it. A fact is a flat 4-tuple, subject, relation, object or value, and expiry (D-001, D-006): nothing records who wrote it, and compiled bytecode keeps no source lines. Recording writers at run time would need a source-line table in compiled code, a writer log beside the world, and a rule for rewinds and loads, which restore facts without their writers. The maintainer chose on 2026-11-27, deciding the plain way: look it up rather than record it.
+
+**Decision.**
+1. **Look it up in the script.** For a fact such as `Paid(Hero)`, the Studio lists every `remember` line in the script that could have written it: the same relation, with every fixed name in the line matching the fact (a variable or parameter matches anything). One candidate opens the script there; several show as a short list to choose from. With several candidates it cannot say which one ran, and says so.
+2. **A Facts list in the Play window.** The Play window gains a panel listing the game's live facts, read from the play module and filterable by relation, each with a Show line button. It works with touch and keeps the game picture unchanged.
+3. **Engine facts name their system.** A fact the engine writes (Knows from appeals, Chose from decisions and dilemmas, grid cell facts, AgendaState, and the rest of the engine's relations) shows "written by the engine" with the system, and where one drives it, the declaration's line, such as the dilemma or decision block.
+
+**Consequences.** Built 2026-11-27 (session 132). No engine, VM, package, or save change, and nothing ships in games; rewinds and loads cannot make the answer stale. The parser records each `remember` statement's line, and the supported `compiler.writer_sources` reports them with the decisions and dilemmas that write facts. The play module (Studio code) exports its live facts by name through the supported `World.query` and `get_relation_meta`, leaving bookkeeping relations out; it keeps the runtime its deck's `load` was given, since the runtime is the module's one global. A variable or `_` in a `remember` matches any name, so a line in a routine for `who` is offered for every subject. `bespoke-play.wasm` went from 567,000 to 569,324 bytes and `bespoke-studio.wasm` from 596,962 to 601,700. Exact run-time recording stays possible later as its own item if the lookup proves too vague in use.
+
+**Alternatives:** recording writers while playing, rejected for now as engine work in the VM, package, and save paths for a question the script can mostly answer; picking the fact in the runtime's drawn State drawer, rejected because it is mouse-and-keys only and needs the inspector's selection exposed; hiding engine facts, rejected because an author looking at `Chose` wants to know where it came from.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

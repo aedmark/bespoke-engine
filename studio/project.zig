@@ -1184,6 +1184,61 @@ pub const Project = struct {
         return true;
     }
 
+    /// The lines that could have written the fact `relation(subject, object)` (P47-09, D-205), as
+    /// JSON in `result`: every `remember` of that relation whose fixed names match (a variable
+    /// or `_` matches anything; `object` is empty for a one-place fact), the engine system
+    /// that writes the relation when it is one of the engine's, and the declaration that drove
+    /// it when the fact names one (a decision's or dilemma's `Chose` and state).
+    pub fn writers(self: *Project, main_path: []const u8, relation: []const u8, subject: []const u8, object: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse return self.refuse_room("the project has no main script");
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const ws = compiler.writer_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        var buf: [1024]u8 = undefined;
+        try w.raw("{\"candidates\":[");
+        var n: usize = 0;
+        for (ws.remembers) |r| {
+            if (!std.mem.eql(u8, r.relation, relation)) continue;
+            if (r.args.len == 0 or !arg_matches(r.args[0], subject)) continue;
+            if (r.args.len >= 2 and object.len > 0 and !arg_matches(r.args[1], object)) continue;
+            if (r.args.len >= 2 and object.len == 0) continue;
+            if (n > 0) try w.raw(",");
+            n += 1;
+            try w.raw("{\"script\":");
+            try w.string(table_script(&buf, main_path, dir, r.at.script));
+            try w.raw(",\"line\":");
+            try w.number(r.at.line);
+            try w.raw("}");
+        }
+        try w.raw("],\"engine\":");
+        try w.string(engine_system(relation));
+        try w.raw(",\"declaration\":");
+        const driven = std.mem.eql(u8, relation, "Chose") or std.mem.eql(u8, relation, "DecisionState") or std.mem.eql(u8, relation, "DilemmaState");
+        const decl = if (driven) for (ws.declarations) |d| {
+            if (std.mem.eql(u8, d.name, subject)) break d;
+        } else null else null;
+        if (decl) |d| {
+            try w.raw("{\"kind\":");
+            try w.string(d.kind);
+            try w.raw(",\"name\":");
+            try w.string(d.name);
+            try w.raw(",\"script\":");
+            try w.string(table_script(&buf, main_path, dir, d.at.script));
+            try w.raw(",\"line\":");
+            try w.number(d.at.line);
+            try w.raw("}");
+        } else try w.raw("null");
+        try w.raw("}");
+        return true;
+    }
+
     pub fn refuse_room(self: *Project, why: []const u8) !bool {
         self.result.clearRetainingCapacity();
         var w = Json{ .list = &self.result, .allocator = self.allocator };
@@ -1349,6 +1404,30 @@ fn text_of_line(text: []const u8, n: u32) []const u8 {
     const start = line_start(text, n);
     const end = std.mem.indexOfScalarPos(u8, text, start, '\n') orelse text.len;
     return std.mem.trimEnd(u8, text[start..end], "\r");
+}
+
+/// Whether a `remember` argument as written can stand for `value` in a fact (D-205): a variable
+/// (lowercase first letter, D-161) or `_` matches anything, a fixed name or number only itself.
+fn arg_matches(arg: []const u8, value: []const u8) bool {
+    if (std.mem.eql(u8, arg, "_") or (arg.len > 0 and std.ascii.isLower(arg[0]))) return true;
+    return std.mem.eql(u8, arg, value);
+}
+
+/// The engine system that writes `relation`, for a fact no script line may have written (D-205
+/// item 3); empty for a relation only scripts write.
+fn engine_system(relation: []const u8) []const u8 {
+    const table = [_]struct { []const u8, []const u8 }{
+        .{ "AgendaState", "agendas" },        .{ "Pursuing", "agendas" },
+        .{ "DecisionState", "decisions" },    .{ "DilemmaState", "dilemmas" },
+        .{ "Chose", "decisions and dilemmas" }, .{ "Appealed", "persuasion" },
+        .{ "Knows", "knowledge, from watching dilemmas and from appeals" }, .{ "Believes", "knowledge" },
+        .{ "Rejects", "knowledge" },          .{ "Presented", "presenting evidence" },
+        .{ "PathActive", "paths" },           .{ "ConvergenceReady", "branch worlds" },
+        .{ "LoopClosed", "branch worlds" },   .{ "Looks", "looks" },
+    };
+    for (table) |entry| if (std.mem.eql(u8, entry[0], relation)) return entry[1];
+    if (std.mem.startsWith(u8, relation, "Cell") or (std.mem.startsWith(u8, relation, "In") and std.mem.endsWith(u8, relation, "Cell"))) return "grids";
+    return "";
 }
 
 fn listed(sc: compiler.CastScene, thing: []const u8) bool {
@@ -1999,4 +2078,20 @@ test "the dialogue listing gives each conversation's nodes, with never-holding g
     parsed.deinit();
     try std.testing.expect(result_has(&p, "\"title\":\"on cue TalksTo(Hero, Guide)\""));
     try std.testing.expect(result_has(&p, "\"guard\":\"Sigil(Hero)\",\"never\":1,\"line\":9"));
+}
+
+test "a fact's writers are the remember lines whose fixed names match, and engine facts name their system" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("main.bespoke", "scene Quay:\n  cast: Hero, Guide\n\nrelation Paid(who)\nrelation Owes(who, whom)\nremember Paid(Guide)\n\non cue TalksTo(Hero, Guide):\n  remember Paid(Hero)\n  remember Owes(Hero, Guide)\n\nroutine Idle(who):\n  remember Paid(who)\n");
+    try std.testing.expect(try p.writers("main.bespoke", "Paid", "Hero", ""));
+    // Line 9 names Hero; line 13's `who` could be anyone; line 6 names Guide, so not it.
+    try std.testing.expect(result_has(&p, "\"candidates\":[{\"script\":\"main.bespoke\",\"line\":13},{\"script\":\"main.bespoke\",\"line\":9}]"));
+    try std.testing.expect(result_has(&p, "\"engine\":\"\""));
+    try std.testing.expect(try p.writers("main.bespoke", "Owes", "Hero", "Guide"));
+    try std.testing.expect(result_has(&p, "\"line\":10}]"));
+    try std.testing.expect(try p.writers("main.bespoke", "Owes", "Hero", "Hero"));
+    try std.testing.expect(result_has(&p, "\"candidates\":[]"));
+    try std.testing.expect(try p.writers("main.bespoke", "CellFlammable", "Floor", "3"));
+    try std.testing.expect(result_has(&p, "\"engine\":\"grids\""));
 }

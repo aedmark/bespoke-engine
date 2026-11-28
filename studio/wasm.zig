@@ -185,6 +185,18 @@ export fn studio_dialogue(main_ptr: [*]const u8, main_len: usize) i32 {
     return if (ok) 1 else 0;
 }
 
+/// The lines that could have written a fact, as JSON in the result buffer (P47-09, D-205).
+/// The fact comes as `relation<TAB>subject<TAB>object` (object empty for a one-place fact).
+/// 1 listed, 0 refused, -1 out of memory.
+export fn studio_writers(main_ptr: [*]const u8, main_len: usize, fact_ptr: [*]const u8, fact_len: usize) i32 {
+    var parts = std.mem.splitScalar(u8, fact_ptr[0..fact_len], '\t');
+    const relation = parts.next() orelse "";
+    const subject = parts.next() orelse "";
+    const object = parts.next() orelse "";
+    const ok = project.writers(main_ptr[0..main_len], relation, subject, object) catch return -1;
+    return if (ok) 1 else 0;
+}
+
 /// Copies the table's bytes for `path` into the blob, so the page reads back a script the
 /// module edited. 1 found, 0 not in the table.
 export fn studio_file(path_ptr: [*]const u8, path_len: usize) i32 {

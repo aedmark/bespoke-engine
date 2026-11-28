@@ -606,7 +606,21 @@
 
   const screen = desk.screen(`BeSpoke Studio ${STUDIO_BUILD.version}`);
   let projectWin = null;
-  const player = createPlay(desk, screen, { build: () => play(), reportFault });
+  const player = createPlay(desk, screen, {
+    build: () => play(),
+    reportFault,
+    openScript: (path, l, c) => openScript(path, l, c),
+    // The lines that could have written a fact (P47-09, D-205), from the Studio module.
+    writers: (f) => withCompiler((x) => {
+      const m = put(x, enc.encode(S.project.main));
+      const q = put(x, enc.encode(`${f.relation}\t${f.subject}\t${f.object}`));
+      const status = x.studio_writers(m.ptr, m.used, q.ptr, q.used);
+      x.studio_free(m.ptr, m.len);
+      x.studio_free(q.ptr, q.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      return status === 1 ? decodeJson(x) : null;
+    }),
+  });
 
   // The pixel editor's view of the project and the Studio module (D-196).
   function decodeJson(x) {
@@ -1164,6 +1178,7 @@
     // that a package the runtime refuses leaves a working Studio.
     playBytes: (bytes) => player.run(Uint8Array.from(bytes)),
     playKey: (code) => player.key(code),
+    playGadget: (id) => player.gadget(id),
     // Raises a trap inside the play window's guard, as a game that fails mid-run would, so a
     // test can show the Studio outlives it and Run starts a fresh module.
     playTrap: (msg) => player.guard(() => { throw new WebAssembly.RuntimeError(msg); }),

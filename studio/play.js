@@ -7,6 +7,10 @@
 // memory ends only this instance. The window then says so, the fault panel reports it, and Run
 // starts a fresh one; the project window, the compiler, and every open file are untouched
 // (D-192 item 5).
+//
+// The Facts panel (P47-09, D-205) lists the game's live facts, read from the play module, and
+// Show line finds the `remember` lines in the script that could have written one (the Studio
+// module's lookup), or names the engine system that writes it.
 'use strict';
 
 // eslint-disable-next-line no-unused-vars
@@ -26,6 +30,9 @@ function createPlay(desk, screen, hooks) {
     tick: 0,
     runs: 0,
     sound: false,
+    factsOpen: false,
+    facts: [],
+    filter: '',
   };
 
   let compiled = null; // WebAssembly.Module, compiled once
@@ -270,10 +277,77 @@ function createPlay(desk, screen, hooks) {
     add('play-verb', 'Verb', live);
     add('play-state', 'State', live);
     add('play-sound', P.sound ? 'Sound off' : 'Sound on', live);
+    add('play-facts', P.factsOpen ? 'Hide facts' : 'Facts', live);
     statusRow = document.createElement('div');
     statusRow.dataset.text = '';
-    win.body.replaceChildren(row, canvas, statusRow);
+    const parts = [row, canvas, statusRow];
+    if (P.factsOpen) parts.push(...factsPanel());
+    win.body.replaceChildren(...parts);
     updateStatus();
+  }
+
+  // ------------------------------------------------------------ facts (P47-09, D-205)
+
+  function readFacts() {
+    const text = guard((m) => {
+      const len = m.play_facts();
+      return new TextDecoder().decode(new Uint8Array(m.memory.buffer, m.play_facts_ptr(), len));
+    });
+    P.facts = (text || '').split('\n').filter((l) => l).map((l) => {
+      const [relation, subject, object] = l.split('\t');
+      return { relation, subject, object: object || '' };
+    });
+  }
+
+  function factText(f) {
+    return f.object ? `${f.relation}(${f.subject}, ${f.object})` : `${f.relation}(${f.subject})`;
+  }
+
+  function factsPanel() {
+    const wrap = document.createElement('label');
+    wrap.className = 'line field';
+    wrap.appendChild(desk.label('Relation'));
+    const input = document.createElement('input');
+    input.className = 'strgad';
+    input.name = 'fact-filter';
+    input.value = P.filter;
+    input.setAttribute('aria-label', 'Filter facts by relation');
+    input.onkeydown = (e) => e.stopPropagation();
+    input.oninput = () => { P.filter = input.value; render(); const again = win.body.querySelector('input[name="fact-filter"]'); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } };
+    wrap.appendChild(input);
+    const list = document.createElement('div');
+    list.className = 'list cast-list';
+    const want = P.filter.trim().toLowerCase();
+    P.facts.forEach((f, i) => {
+      if (want && !f.relation.toLowerCase().includes(want)) return;
+      const b = desk.button(win, `fact:${i}`, factText(f), { cls: 'item' });
+      b.setAttribute('aria-label', `Show the line that wrote ${factText(f)}`);
+      list.appendChild(b);
+    });
+    const refresh = document.createElement('div');
+    refresh.className = 'row';
+    refresh.appendChild(desk.button(win, 'facts-refresh', `Refresh (${P.facts.length} facts)`));
+    return [wrap, list, refresh];
+  }
+
+  // Show line for one fact: one candidate opens the script there, several are offered, and an
+  // engine fact names its system and the declaration that drove it (D-205).
+  async function showWriter(f) {
+    const r = hooks.writers(f);
+    if (!r) return;
+    const lines = [];
+    const buttons = [];
+    if (r.engine) lines.push(`Written by the engine (${r.engine}).`);
+    if (r.declaration) buttons.push({ id: 'decl', label: `${r.declaration.kind} ${r.declaration.name}`, at: r.declaration });
+    if (r.candidates.length === 1 && !r.engine) { hooks.openScript(r.candidates[0].script, r.candidates[0].line, 0); return; }
+    if (r.candidates.length) {
+      lines.push(r.candidates.length === 1 ? 'This script line can also write it:' : `${r.candidates.length} script lines could have written it; which one ran is not recorded:`);
+      r.candidates.slice(0, 6).forEach((c, i) => buttons.push({ id: `c${i}`, label: `${c.script}:${c.line}`, at: c }));
+    } else if (!r.engine) lines.push('No line in the script writes it.');
+    buttons.push({ id: 'ok', label: 'OK' });
+    const pick = await desk.requester(win, { title: factText(f), lines, buttons: buttons.map(({ id, label }) => ({ id, label })) });
+    const chosen = buttons.find((b) => b.id === pick && b.at);
+    if (chosen) hooks.openScript(chosen.at.script, chosen.at.line, 0);
   }
 
   function open() {
@@ -317,7 +391,10 @@ function createPlay(desk, screen, hooks) {
           case 'play-state': key(KEY.state); return;
           case 'play-verb': guard((m) => m.wasm_on_right_click(0, 0)); draw(); return;
           case 'play-sound': if (P.sound) soundOff(); else await soundOn(); render(); return;
+          case 'play-facts': P.factsOpen = !P.factsOpen; if (P.factsOpen) readFacts(); render(); return;
+          case 'facts-refresh': readFacts(); render(); return;
           default:
+            if (msg.id.startsWith('fact:')) { const f = P.facts[Number(msg.id.slice(5))]; if (f) await showWriter(f); }
         }
       },
     });
@@ -338,8 +415,8 @@ function createPlay(desk, screen, hooks) {
   }
 
   function state() {
-    return { status: P.status, failure: P.failure, tick: P.tick, runs: P.runs, sound: P.sound, open: Boolean(win), title: win ? win.el.getAttribute('aria-label') : null };
+    return { status: P.status, failure: P.failure, tick: P.tick, runs: P.runs, sound: P.sound, open: Boolean(win), title: win ? win.el.getAttribute('aria-label') : null, factsOpen: P.factsOpen, facts: P.facts.map(factText) };
   }
 
-  return { open, run, close, state, key, guard };
+  return { open, run, close, state, key, guard, gadget: (id) => { if (win) win.port.post({ kind: 'gadget', id }); return Boolean(win); } };
 }
