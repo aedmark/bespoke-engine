@@ -2635,6 +2635,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a dialogue bound to its cue in its header, rejected because one cue would take one dialogue and none could be reused; any statement inside a dialogue, rejected because the editor could not show or write all of it; the language and editor in one change, rejected to keep reviewable changes, as rooms went; editing on the map itself, rejected for now as a larger piece of UI than a line form beside a live map.
 
+## D-207 A Studio Export Is init's Page Shell Around the Play Module and the Game's Package, Downloaded (2026-11-28, status: accepted; P47-07, follows D-195)
+
+**Context.** P47-07 exports the game as one HTML page, "through the same packer as `bespoke init` projects". A project from `bespoke init` builds its page with Zig: the compiled package is embedded in the game's own `.wasm` (D-066, D-147), the page `index.html` (stage, or text, D-191) loads it, and `tools/pack_game_page.py` inlines the `.wasm` as base64 and adds the license as a template into one file. The Studio cannot run Zig in the browser, but it already carries a generic runtime that loads a package at start, the play module (D-195), and it builds packages itself. The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. **The play module is the runtime.** An exported page carries `bespoke-play.wasm`, the runtime the Play window runs, with the game's package handed in at start (`play_alloc`, then `wasm_init`); the page is what the author tested in Play. Unlike an `init` build, the package is loaded at start rather than built into the `.wasm`.
+2. **init's own shells.** The page is the `index.html` that `bespoke init` writes, stage or text (D-191) chosen at export, with only its loader swapped to instantiate the inlined module and hand over the package; the packer's one-file form and license template are kept, so a Studio export looks and plays like a game built from a project.
+3. **A download.** The browser saves `<game>.html`; nothing is written into the project, and no folder permission is asked.
+4. Export builds the project first, as Play does; a script that does not compile shows its diagnostic and exports nothing.
+
+**Consequences.** The Studio page carries the two `init` shells and the license text, built in by `tools/build_studio.py` from `src/scaffold/` and `LICENSE`, so they stay one source; a test pins the Studio's loader swap to the packer's shape. The play module's Studio-only exports (`play_facts`) ride along in exported pages unused. A page's size is the play module plus the package; budgets (D-141, D-157) are checked on an export of The Sunken Vault.
+
+**Alternatives:** a separate page module, rejected because a third module would take the Studio page past its 2 MiB budget for no gain the author can see; a Studio shell, rejected so exports match games built from projects; writing into the project, rejected for now because a download needs no permission and works in every browser.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
