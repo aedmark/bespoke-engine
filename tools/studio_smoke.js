@@ -22,7 +22,11 @@
 //      PNG and nothing else; the command line then compiles the saved project;
 //   8. (P47-10, D-197) a new image and a PNG import each add one `image` line after the Vault's
 //      last image and one PNG; an import outside the palette is refused with its pixel and adds
-//      nothing; Save creates both files and writes the script, and nothing else changes.
+//      nothing; Save creates both files and writes the script, and nothing else changes;
+//   9. (P47-03, D-200) the room editor moves a mark, adds a walkway and an exit, each written as
+//      the scene's room block after its `scene` block and checked; Undo restores the script's
+//      exact bytes; a block with comments asks first; Save changes only that script, and the
+//      command line walks through the new exit.
 'use strict';
 
 const fs = require('fs');
@@ -543,6 +547,102 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  new image and import: two lines after the last image, two PNGs created, an off-palette import refused, nothing else touched; ${addCli}`);
+
+    // 9. The room editor.
+    const ROOMS_SRC = 'scene Yard:\r\n  cast: Hero\r\n  props: Bucket\r\n  marks: Gate, Well, Shed\r\n\r\nscene Hall:\r\n  marks: Door, Hearth\r\n\r\nroutine Stroll(Hero):\r\n  wait 1 ticks\r\n  walk Hero to Shed\r\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(ROOMS_SRC) }));
+    await delay(20);
+    const roomBefore = await evaluate(SNAPSHOT);
+    const faultsBefore = (await state()).faults.length;
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openRooms()');
+    await evaluate("window.bespokeStudio.openScene('Yard')");
+    const yard = async () => (await state()).rooms.editors.find((e) => e.name === 'Yard');
+    let ed = await yard();
+    // The page snaps as the module does, for every place the listing gives.
+    for (const p of ed.places) {
+      const l = ed.listed.find((q) => q.name === p.name && q.prop === p.prop);
+      if (p.drawn.x !== l.drawn_x || p.drawn.y !== l.drawn_y) throw new Error(`snap differs for ${p.name}: page ${JSON.stringify(p.drawn)}, module ${l.drawn_x},${l.drawn_y}`);
+    }
+    const drawnAt = (e, n) => { const p = e.places.find((q) => q.name === n); return [p.drawn.x, p.drawn.y]; };
+    const scriptText = async () => evaluate(`(async () => { const f = window.bespokeStudio.state().project.files.find((x) => x.path === 'main.bespoke'); return f && f.dirty; })()`);
+    // Move: the first edit adds the block after the scene block.
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Gate'))}, [30, 110], [40, 120]], 'move')`);
+    await waitFor('the room block', async () => ((await yard()).block ? true : null));
+    ed = await yard();
+    if (ed.block.line !== 6 || ed.places.find((p) => p.name === 'Gate').x !== 40) throw new Error(`move: ${JSON.stringify(ed.block)} ${JSON.stringify(ed.places)}`);
+    if (!await scriptText()) throw new Error('the moved mark did not mark main.bespoke edited');
+    // Undo goes back to the script's own bytes; Redo brings the block back.
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'undo')");
+    await waitFor('undo to no block', async () => (!(await yard()).block ? true : null));
+    if (await scriptText()) throw new Error('undo left main.bespoke edited');
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'redo')");
+    await waitFor('redo', async () => ((await yard()).block ? true : null));
+    // Walkway: Gate and Shed; the default chain becomes explicit first.
+    ed = await yard();
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'tool:walkway')");
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Gate'))}])`);
+    await delay(150);
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Shed'))}])`);
+    await waitFor('the walkway', async () => ((await yard()).walkways.some(([a, b]) => a === 'Gate' && b === 'Shed') ? true : null));
+    // Exit: Shed leads to the hall's door.
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'tool:exit')");
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Shed'))}])`);
+    const exitItem = await waitFor('exit targets', () => evaluate(`(() => {
+      const b = [...document.querySelectorAll('[data-window="room:Yard"] .room-targets .item')].find((x) => /Hall: Door/.test(x.textContent));
+      return b ? b.dataset.gadget : null;
+    })()`));
+    await evaluate(`window.bespokeStudio.roomGadget('Yard', ${JSON.stringify(exitItem)})`);
+    await waitFor('the exit', async () => ((await yard()).exits.some((e) => e.mark === 'Shed' && e.to_scene === 'Hall') ? true : null));
+    // Area: pick the bucket, then drag its rectangle.
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'tool:area')");
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Bucket'))}])`);
+    await waitFor('bucket picked', async () => (((await yard()).selected || {}).name === 'Bucket' ? true : null));
+    await evaluate("window.bespokeStudio.roomGesture('Yard', [[100, 60], [104, 64], [109, 69]])");
+    await waitFor('the area', async () => ((await yard()).areas.some((a) => a.prop === 'Bucket' && a.in_block && a.w === 10 && a.h === 10) ? true : null));
+    s = await state();
+    if (s.faults.length > faultsBefore || s.requester) throw new Error(`room edits: ${JSON.stringify(s.faults.slice(faultsBefore))} ${s.requester}`);
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const roomSaved = await evaluate('window.__save');
+    if (roomSaved.written !== 1) throw new Error(`room save: ${JSON.stringify(roomSaved)}`);
+    const roomAfter = await evaluate(SNAPSHOT);
+    const savedText = Buffer.from(roomAfter['main.bespoke'].b64, 'base64').toString('latin1');
+    const wantText = ROOMS_SRC.replace('marks: Gate, Well, Shed\r\n\r\n', 'marks: Gate, Well, Shed\r\n\r\nroom Yard:\r\n  mark Gate at 40 120\r\n'
+      + `  mark Well at ${ed.places.find((p) => p.name === 'Well').x} ${ed.places.find((p) => p.name === 'Well').y}\r\n`
+      + `  mark Shed at ${ed.places.find((p) => p.name === 'Shed').x} ${ed.places.find((p) => p.name === 'Shed').y}\r\n`
+      + `  prop Bucket at ${ed.places.find((p) => p.name === 'Bucket').x} ${ed.places.find((p) => p.name === 'Bucket').y}\r\n`
+      + '  area Bucket: 100 60 10 10\r\n'
+      + '  walkway Gate to Well\r\n  walkway Well to Shed\r\n  walkway Gate to Shed\r\n  exit Shed to Hall at Door\r\n\r\n');
+    if (savedText !== wantText) throw new Error(`saved script:\n${JSON.stringify(savedText)}\nwanted:\n${JSON.stringify(wantText)}`);
+    if (Object.keys(roomAfter).length !== Object.keys(roomBefore).length) throw new Error('the room editor made other files');
+    let roomCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-room-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), Buffer.from(roomAfter['main.bespoke'].b64, 'base64'));
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['run', path.join(dir, 'main.bespoke'), '--headless', '--ticks', '20'], { encoding: 'utf8' });
+        if (run.status !== 0 || !/Scene: Hall/.test(run.stdout)) throw new Error(`bespoke run after the room editor: ${run.stdout}${run.stderr}`);
+        roomCli = 'bespoke run walks the Hero through the new exit to the Hall';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    // A block that holds a comment asks before it is rewritten.
+    const COMMENTED = ROOMS_SRC.replace('scene Hall:', 'room Yard:\r\n  # the well is in the middle\r\n  mark Gate at 40 120\r\n  mark Well at 160 130\r\n  mark Shed at 250 120\r\n  prop Bucket at 120 80\r\n\r\nscene Hall:');
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(COMMENTED) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate("window.bespokeStudio.openScene('Yard')");
+    ed = await yard();
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Gate'))}, [50, 125]], 'move')`);
+    await requester('Room');
+    await click('.req-buttons .gad:last-child');
+    await noRequester();
+    s = await state();
+    if (s.project.files.find((f) => f.path === 'main.bespoke').dirty) throw new Error('Cancel on the comment requester still wrote the block');
+    console.log(`ok  room editor: move, undo to the script's own bytes, walkway, exit, area, each checked; Save wrote only the block after the scene; ${roomCli}; a commented block asks first`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

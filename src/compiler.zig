@@ -261,6 +261,132 @@ pub fn art_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSou
     return .{ .images = images, .animations = anims.items, .palette = if (declared > 1) ast.art.palette[1..declared] else &.{} };
 }
 
+/// Where something in a scene stands, for a room editor (P47-03, D-200): the art pixel a
+/// room block gives (`placed`), or, for one it does not place, the art pixel nearest its
+/// default spot. `drawn_x`/`drawn_y` is the art pixel where the engine draws it, after the
+/// snap (`spatial.art_to_world`).
+pub const RoomPlace = struct {
+    name: []const u8,
+    prop: bool,
+    x: u32,
+    y: u32,
+    drawn_x: u32,
+    drawn_y: u32,
+    placed: bool,
+};
+
+pub const RoomArea = struct { prop: []const u8, x: u16, y: u16, w: u16, h: u16, in_block: bool };
+pub const RoomWalkway = struct { a: []const u8, b: []const u8 };
+pub const RoomExit = struct { mark: []const u8, to_scene: []const u8, to_mark: []const u8 };
+pub const RoomGridRect = struct { attribute: []const u8, x: u32, y: u32, width: u32, height: u32 };
+pub const RoomGrid = struct {
+    name: []const u8,
+    width: u32,
+    height: u32,
+    cell: u32,
+    origin_x: i32,
+    origin_y: i32,
+    rects: []const RoomGridRect,
+};
+/// A range of lines in one script file: `script` as an include line wrote it (empty for the
+/// main script) and lines `line` to `end_line`, counted in that file.
+pub const ScriptLines = struct { script: []const u8, line: u32, end_line: u32 };
+
+/// One scene as a room editor sees it: where it is declared, its backdrop's image name, its
+/// marks then props, the walkways (or `chained` for the default chain), exits, areas for its
+/// props, grids, and its room block, if any.
+pub const SceneRoom = struct {
+    name: []const u8,
+    declared: ScriptLines,
+    backdrop: []const u8,
+    places: []const RoomPlace,
+    chained: bool,
+    walkways: []const RoomWalkway,
+    exits: []const RoomExit,
+    areas: []const RoomArea,
+    grids: []const RoomGrid,
+    block: ?ScriptLines,
+};
+
+/// Parses `source` far enough to list its scenes and room blocks, as `art_sources` does:
+/// everything lives in `arena`, and a script that does not parse returns the parse error.
+/// Only scenes declared with `scene <Name>:` are listed, since only they take room blocks.
+pub fn room_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) ![]const SceneRoom {
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    const out = try arena.alloc(SceneRoom, ast.scene_defs.items.len);
+    for (ast.scene_defs.items, out) |sd, *room_out| {
+        const room: ?parser.RoomDecl = for (ast.rooms) |r| {
+            if (std.mem.eql(u8, r.scene, sd.name)) break r;
+        } else null;
+        var places: std.ArrayList(RoomPlace) = .empty;
+        for ([_]bool{ false, true }) |prop| {
+            const names = if (prop) sd.props.items else sd.marks.items;
+            for (names, 0..) |name, idx| {
+                var item = RoomPlace{ .name = name, .prop = prop, .x = 0, .y = 0, .drawn_x = 0, .drawn_y = 0, .placed = false };
+                if (room) |r| for (r.places) |p| if (p.prop == prop and std.mem.eql(u8, p.name, name)) {
+                    item.x = p.x;
+                    item.y = p.y;
+                    item.placed = true;
+                };
+                const world: spatial_mod.Point2D = if (item.placed) spatial_mod.art_to_world(item.x, item.y) else if (prop)
+                    .{ .x = 10 + codegen.stage_x(idx, names.len), .y = -6 }
+                else
+                    .{ .x = codegen.stage_x(idx, names.len), .y = 0 };
+                const drawn = spatial_mod.world_to_art(world);
+                if (!item.placed) {
+                    item.x = drawn.x;
+                    item.y = drawn.y;
+                }
+                item.drawn_x = drawn.x;
+                item.drawn_y = drawn.y;
+                try places.append(arena, item);
+            }
+        }
+        var walkways: std.ArrayList(RoomWalkway) = .empty;
+        var exits: std.ArrayList(RoomExit) = .empty;
+        if (room) |r| {
+            for (r.walkways) |w| try walkways.append(arena, .{ .a = w.a, .b = w.b });
+            for (r.exits) |e| try exits.append(arena, .{ .mark = e.mark, .to_scene = e.to_scene, .to_mark = e.to_mark });
+        }
+        var areas: std.ArrayList(RoomArea) = .empty;
+        for (ast.art.areas) |a| for (sd.props.items) |p| if (std.mem.eql(u8, p, a.target)) {
+            const line: u32 = @intCast(a.at.line);
+            const in_block = if (room) |r| line >= r.at.line and line <= r.end_line else false;
+            try areas.append(arena, .{ .prop = a.target, .x = a.x, .y = a.y, .w = a.w, .h = a.h, .in_block = in_block });
+        };
+        var grids: std.ArrayList(RoomGrid) = .empty;
+        for (ast.grids.items) |g| if (std.mem.eql(u8, g.room, sd.name)) {
+            const rects = try arena.alloc(RoomGridRect, g.rects.len);
+            for (g.rects, rects) |src, *dst| dst.* = .{ .attribute = src.attribute, .x = src.x, .y = src.y, .width = src.width, .height = src.height };
+            try grids.append(arena, .{ .name = g.name, .width = g.width, .height = g.height, .cell = g.cell_size, .origin_x = g.origin_x, .origin_y = g.origin_y, .rects = rects });
+        };
+        const declared_at = expanded.locate(sd.line);
+        const declared_end = expanded.locate(sd.end_line);
+        room_out.* = .{
+            .name = sd.name,
+            .declared = .{ .script = declared_at.file, .line = declared_at.line, .end_line = declared_end.line },
+            .backdrop = if (sd.backdrop) |b| b.slice else "",
+            .places = places.items,
+            .chained = if (room) |r| r.walkways.len == 0 else true,
+            .walkways = walkways.items,
+            .exits = exits.items,
+            .areas = areas.items,
+            .grids = grids.items,
+            .block = if (room) |r| blk: {
+                const from = expanded.locate(@intCast(r.at.line));
+                const to = expanded.locate(r.end_line);
+                break :blk .{ .script = from.file, .line = from.line, .end_line = to.line };
+            } else null,
+        };
+    }
+    return out;
+}
+
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
     return check_source_with(allocator, source, null);
 }
@@ -1687,6 +1813,61 @@ test "D-199: room block refusals name the line and the missing thing" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "D-200: room_sources lists each scene's lines, places, and room block across files" {
+    const testing = std.testing;
+    const Files = struct {
+        fn read(context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+            _ = context;
+            if (std.mem.eql(u8, path, "rooms.bespoke")) return allocator.dupe(u8,
+                \\# The yard's layout.
+                \\room Yard:
+                \\  mark Gate at 40 120
+                \\  mark Well at 200 132
+                \\  prop Bucket at 214 128
+                \\  area Bucket: 210 120 8 9
+                \\  walkway Gate to Well
+                \\
+            );
+            return error.FileNotFound;
+        }
+    };
+    var dummy: u8 = 0;
+    const files = FileSource{ .context = &dummy, .read = Files.read };
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Yard:
+        \\  cast: Hero
+        \\  props: Bucket
+        \\  marks: Gate, Well
+        \\
+        \\scene Hall:
+        \\  marks: Door, Hearth
+        \\
+        \\include "rooms.bespoke"
+        \\
+    ;
+    const scenes = try room_sources(arena.allocator(), src, files);
+    try testing.expectEqual(@as(usize, 2), scenes.len);
+    const yard = scenes[0];
+    try testing.expectEqualStrings("", yard.declared.script);
+    try testing.expectEqual(@as(u32, 1), yard.declared.line);
+    try testing.expectEqual(@as(u32, 4), yard.declared.end_line);
+    try testing.expectEqualStrings("rooms.bespoke", yard.block.?.script);
+    try testing.expectEqual(@as(u32, 2), yard.block.?.line);
+    try testing.expectEqual(@as(u32, 7), yard.block.?.end_line);
+    try testing.expect(!yard.chained);
+    try testing.expectEqual(@as(usize, 3), yard.places.len);
+    try testing.expect(yard.places[0].placed and yard.places[2].prop);
+    try testing.expect(yard.areas[0].in_block);
+    // The hall has no block: its marks sit on their default spots, drawn where the engine draws them.
+    const hall = scenes[1];
+    try testing.expect(hall.block == null and hall.chained);
+    try testing.expect(!hall.places[0].placed);
+    const w = spatial_mod.art_to_world(hall.places[1].x, hall.places[1].y);
+    try testing.expectEqual(spatial_mod.Point2D{ .x = codegen.stage_x(1, 2), .y = 0 }, w);
 }
 
 test "D-196: art_sources names each image's script, line, and frames, and its animations" {

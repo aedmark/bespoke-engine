@@ -1,8 +1,9 @@
 // BeSpoke Studio, P47-01 (D-151, D-192): the workspace screen, a project window that opens a
 // folder or files, checks a script with the engine's compiler, and shows its diagnostics in
 // place; the play window (P47-06, D-195, play.js), which runs the built game in a module of its
-// own; and the pixel editor (P47-02, D-196, paint.js), which paints the PNG sheets a script
-// names. An edited file's new bytes stay in the page until Save writes them. The Studio keeps no project state of its own (D-151 item 6): files are
+// own; the pixel editor (P47-02, D-196, paint.js), which paints the PNG sheets a script names;
+// and the room editor (P47-03, D-200, room.js), which lays out a scene as its room block. An
+// edited file's new bytes stay in the page until Save writes them. The Studio keeps no project state of its own (D-151 item 6): files are
 // held as the bytes read from disk and nothing is written back unless an editor changed it.
 //
 // Failed modes fall back to a working screen (D-192 item 5): the workspace and its windows
@@ -272,6 +273,7 @@
     S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: chooseMain(acc.files) };
     S.result = null;
     painter.reset();
+    roomer.reset();
     for (const w of [...screen.windows]) if (w.id.startsWith('script:') || w.id === 'diagnostics') w.close();
     renderProject();
     if (acc.skipped.length) {
@@ -580,20 +582,18 @@
   function decodeJson(x) {
     return JSON.parse(new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.studio_result_ptr(), x.studio_result_len())));
   }
-  const painter = createPaint(desk, screen, {
-    ready: (title) => readyToBuild(title, () => painter.openArt()),
-    home: () => projectWindow(),
-    showResult: (r) => showResult(r),
-    openScript: (path, l, c) => openScript(path, l, c),
-    isDirty: (path) => Boolean(findFile(path) && findFile(path).dirty),
-    listArt: () => withCompiler((x) => {
+  function listArt() {
+    return withCompiler((x) => {
       const p = put(x, enc.encode(S.project.main));
       const status = x.studio_art(p.ptr, p.used);
       x.studio_free(p.ptr, p.len);
       if (status < 0) throw new Error('the compiler ran out of memory');
       return decodeJson(x);
-    }),
-    readPixels: (path) => withCompiler((x) => {
+    });
+  }
+
+  function readPixels(path) {
+    return withCompiler((x) => {
       const p = put(x, enc.encode(path));
       const status = x.studio_pixels(p.ptr, p.used);
       x.studio_free(p.ptr, p.len);
@@ -601,7 +601,27 @@
       if (status === 0) return null;
       const rgba = new Uint8ClampedArray(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice();
       return { width: x.studio_blob_width(), height: x.studio_blob_height(), rgba };
-    }),
+    });
+  }
+
+  // The bytes the module's table holds for `path` (a script it just wrote).
+  function moduleFile(path) {
+    return withCompiler((x) => {
+      const p = put(x, enc.encode(path));
+      const found = x.studio_file(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      return found === 1 ? new Uint8Array(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice() : null;
+    });
+  }
+
+  const painter = createPaint(desk, screen, {
+    ready: (title) => readyToBuild(title, () => painter.openArt()),
+    home: () => projectWindow(),
+    showResult: (r) => showResult(r),
+    openScript: (path, l, c) => openScript(path, l, c),
+    isDirty: (path) => Boolean(findFile(path) && findFile(path).dirty),
+    listArt: () => listArt(),
+    readPixels: (path) => readPixels(path),
     encode: (w, h, pixels) => withCompiler((x) => {
       const d = put(x, pixels);
       const ok = x.studio_encode(w, h, d.ptr, d.used);
@@ -658,6 +678,37 @@
     });
     renderProject();
   }
+  const roomer = createRooms(desk, screen, {
+    ready: (title) => readyToBuild(title, () => roomer.openRooms()),
+    home: () => projectWindow(),
+    showResult: (r) => showResult(r),
+    listArt: () => listArt(),
+    readPixels: (path) => readPixels(path),
+    listRooms: () => withCompiler((x) => {
+      const p = put(x, enc.encode(S.project.main));
+      const status = x.studio_rooms(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      return decodeJson(x);
+    }),
+    // One room block written and checked by the module (D-200); the page then takes the
+    // script's new bytes as an edit waiting for Save.
+    writeRoom: (records) => withCompiler((x) => {
+      const m = put(x, enc.encode(S.project.main));
+      const r = put(x, enc.encode(records));
+      const status = x.studio_write_room(m.ptr, m.used, r.ptr, r.used);
+      x.studio_free(m.ptr, m.len);
+      x.studio_free(r.ptr, r.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      const j = decodeJson(x);
+      if (status === 1) return j;
+      return j.written === false ? { written: false, refused: j.refused } : { written: false, result: j };
+    }),
+    fileBytes: (path) => { const f = findFile(path); return f ? f.bytes : null; },
+    scriptWritten: (path) => { const bytes = moduleFile(path); if (bytes) painterFileChanged(path, bytes); },
+    setScript: (path, bytes) => painterFileChanged(path, bytes),
+  });
+
   window.addEventListener('beforeunload', (e) => { if (dirtyFiles().length) { e.preventDefault(); e.returnValue = ''; } });
 
   function line(text, cls) {
@@ -733,7 +784,7 @@
       }
       const edited = dirtyFiles().length;
       if (edited) out.push(line(fit(`${edited} edited file(s) not saved`, n), 'err'));
-      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['art', 'Art'], ['save', 'Save'], ['open-folder', 'Open folder']]));
+      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['art', 'Art'], ['rooms', 'Rooms'], ['save', 'Save'], ['open-folder', 'Open folder']]));
     }
     win.body.replaceChildren(...out);
   }
@@ -877,6 +928,7 @@
           { id: 'check', label: 'Check script', key: 'K' },
           { id: 'play', label: 'Play game', key: 'G' },
           { id: 'art', label: 'Art...' },
+          { id: 'rooms', label: 'Rooms...' },
           { id: 'save', label: 'Save', key: 'S' },
           { id: 'about', label: 'About the Studio' },
         ],
@@ -888,6 +940,7 @@
           { id: 'win-diagnostics', label: 'Diagnostics' },
           { id: 'win-play', label: 'Play' },
           { id: 'win-art', label: 'Art' },
+          { id: 'win-rooms', label: 'Rooms' },
         ],
       },
       { title: 'Settings', items: [scale(1), scale(2), scale(3)] },
@@ -903,6 +956,8 @@
       case 'win-play': return player.open();
       case 'art':
       case 'win-art': return painter.openArt();
+      case 'rooms':
+      case 'win-rooms': return roomer.openRooms();
       case 'save': return save();
       case 'retry': if (await startCompiler() && S.project && loadIntoCompiler() !== null) await check(); return null;
       case 'about': return about();
@@ -963,6 +1018,12 @@
     openImage: (name) => painter.openImage(name),
     // For tests: the New image and Import forms without the browser's file picker.
     newImageForm: () => { painter.openForm(null); return true; },
+    openRooms: () => roomer.openRooms().then(() => true),
+    openScene: (name) => roomer.openScene(name).then(() => true),
+    // For tests: a pointer gesture at art pixels on a scene's room canvas, and its tool.
+    roomGesture: (name, points, tool) => { const e = roomer.editor(name); if (!e) return false; if (tool) e.win.port.post({ kind: 'gadget', id: `tool:${tool}` }); setTimeout(() => e.gesture(points), 0); return true; },
+    roomGadget: (name, id) => { const e = roomer.editor(name); if (!e) return false; e.win.port.post({ kind: 'gadget', id }); return true; },
+    roomSnap: (x, y) => roomer.snap(x, y),
     importForm: (name, bytes) => { painter.openForm({ name, bytes: Uint8Array.from(bytes) }); return true; },
     // For tests: one click of a tool on a sheet pixel, through the editor's own stroke path.
     paintAt: (name, x, y, tool) => { const e = painter.editor(name); if (!e) return false; e.paintAt(x, y, tool); return true; },
@@ -984,6 +1045,7 @@
       result: S.result,
       play: player.state(),
       paint: painter.state(),
+      rooms: roomer.state(),
       faults: S.faults.slice(),
       windows: screen.windows.map((w) => w.id),
       requester: (document.querySelector('.req') || { getAttribute: () => null }).getAttribute('aria-label'),

@@ -183,6 +183,9 @@ pub const RoomExit = struct { mark: []const u8, to_scene: []const u8, to_mark: [
 pub const RoomDecl = struct {
     scene: []const u8,
     at: Token,
+    /// The block's last line, in the expanded text; a tool that rewrites the block replaces
+    /// lines `at.line` to `end_line` (D-200).
+    end_line: u32 = 0,
     places: []const RoomPlace,
     walkways: []const RoomWalkway,
     exits: []const RoomExit,
@@ -195,6 +198,11 @@ pub const SceneDef = struct {
     marks: std.array_list.Managed([]const u8),
     /// `backdrop: <Image>` (P46-03): the image's name as written, resolved after parsing.
     backdrop: ?Token = null,
+    /// The `scene` line and the last line of its `cast:`, `props:`, `marks:`, and `backdrop:`
+    /// lines, in the expanded text; the room editor adds a first room block after `end_line`
+    /// (D-200).
+    line: u32 = 0,
+    end_line: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) SceneDef {
         return .{
@@ -1276,23 +1284,30 @@ pub const Parser = struct {
                     });
                 },
                 .kw_scene => {
+                    const scene_line: u32 = @intCast(self.current.line);
                     try self.advance();
                     if (self.current.tag == .colon) try self.advance();
                     const name = try self.parse_name();
                     if (self.current.tag == .colon) try self.advance();
                     try ast.scenes.append(name);
                     try ast.entities.append(name);
-                    try ast.scene_defs.append(SceneDef.init(self.allocator, name));
+                    var def = SceneDef.init(self.allocator, name);
+                    def.line = scene_line;
+                    def.end_line = scene_line;
+                    try ast.scene_defs.append(def);
                 },
                 .kw_cast => {
                     try self.advance();
                     if (self.current.tag == .colon) try self.advance();
                     while (true) {
+                        const name_line: u32 = @intCast(self.current.line);
                         const name = try self.parse_name();
                         try ast.cast.append(name);
                         try ast.entities.append(name);
                         if (ast.scene_defs.items.len > 0) {
-                            try ast.scene_defs.items[ast.scene_defs.items.len - 1].cast.append(name);
+                            const sd = &ast.scene_defs.items[ast.scene_defs.items.len - 1];
+                            try sd.cast.append(name);
+                            sd.end_line = @max(sd.end_line, name_line);
                         }
                         if (self.current.tag == .comma) {
                             try self.advance();
@@ -1303,11 +1318,14 @@ pub const Parser = struct {
                     try self.advance();
                     if (self.current.tag == .colon) try self.advance();
                     while (true) {
+                        const name_line: u32 = @intCast(self.current.line);
                         const name = try self.parse_name();
                         try ast.props.append(name);
                         try ast.entities.append(name);
                         if (ast.scene_defs.items.len > 0) {
-                            try ast.scene_defs.items[ast.scene_defs.items.len - 1].props.append(name);
+                            const sd = &ast.scene_defs.items[ast.scene_defs.items.len - 1];
+                            try sd.props.append(name);
+                            sd.end_line = @max(sd.end_line, name_line);
                         }
                         if (self.current.tag == .comma) {
                             try self.advance();
@@ -1318,11 +1336,14 @@ pub const Parser = struct {
                     try self.advance();
                     if (self.current.tag == .colon) try self.advance();
                     while (true) {
+                        const name_line: u32 = @intCast(self.current.line);
                         const name = try self.parse_name();
                         try ast.marks.append(name);
                         try ast.entities.append(name);
                         if (ast.scene_defs.items.len > 0) {
-                            try ast.scene_defs.items[ast.scene_defs.items.len - 1].marks.append(name);
+                            const sd = &ast.scene_defs.items[ast.scene_defs.items.len - 1];
+                            try sd.marks.append(name);
+                            sd.end_line = @max(sd.end_line, name_line);
                         }
                         if (self.current.tag == .comma) {
                             try self.advance();
@@ -1614,8 +1635,10 @@ pub const Parser = struct {
         var places: std.ArrayListUnmanaged(RoomPlace) = .empty;
         var walkways: std.ArrayListUnmanaged(RoomWalkway) = .empty;
         var exits: std.ArrayListUnmanaged(RoomExit) = .empty;
+        var end_line: u32 = @intCast(start.line);
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             const at = self.current;
+            end_line = @max(end_line, @as(u32, @intCast(at.line)));
             const word = at.slice;
             try self.advance();
             if (at.tag == .identifier and (std.mem.eql(u8, word, "mark") or std.mem.eql(u8, word, "prop"))) {
@@ -1657,7 +1680,7 @@ pub const Parser = struct {
                 return self.set_error("unexpected '{s}' at the end of a room line", .{self.current.slice});
         }
         _ = try self.expect(.dedent);
-        try self.room_srcs.append(self.allocator, .{ .scene = scene, .at = start, .places = places.items, .walkways = walkways.items, .exits = exits.items });
+        try self.room_srcs.append(self.allocator, .{ .scene = scene, .at = start, .end_line = end_line, .places = places.items, .walkways = walkways.items, .exits = exits.items });
     }
 
     fn mark_declared(ast: *const AST, name: []const u8) bool {
@@ -2712,6 +2735,7 @@ pub const Parser = struct {
             const scene = &ast.scene_defs.items[ast.scene_defs.items.len - 1];
             if (scene.backdrop != null) return self.error_at(start, "scene '{s}' declares a backdrop twice", .{scene.name});
             scene.backdrop = try self.take_image_name();
+            scene.end_line = @max(scene.end_line, @as(u32, @intCast(start.line)));
             return true;
         }
         const named = same_line and (self.current.tag == .identifier or self.current.tag == .string_literal);

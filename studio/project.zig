@@ -302,6 +302,241 @@ pub const Project = struct {
         return true;
     }
 
+    /// Lists the scenes of the script at `main_path` for the room editor (P47-03, D-200), as
+    /// JSON in `result`: each scene's file and lines, backdrop image, marks and props with their
+    /// written and drawn art positions, walkways, exits, areas, grids, and room block, with
+    /// whether that block holds a comment. A script that does not parse gets the check's JSON
+    /// and returns false.
+    pub fn rooms(self: *Project, main_path: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse {
+            try self.write_missing(main_path);
+            return false;
+        };
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const scenes = compiler.room_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        var buf: [1024]u8 = undefined;
+        try w.raw("{\"valid\":true,\"scenes\":[");
+        for (scenes, 0..) |sc, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"name\":");
+            try w.string(sc.name);
+            try w.raw(",\"declared\":");
+            try self.json_lines(&w, &buf, main_path, dir, sc.declared);
+            try w.raw("}");
+            try w.raw(",\"backdrop\":");
+            try w.string(sc.backdrop);
+            try w.raw(",\"chained\":");
+            try w.raw(if (sc.chained) "true" else "false");
+            try w.raw(",\"places\":[");
+            for (sc.places, 0..) |pl, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("{\"name\":");
+                try w.string(pl.name);
+                try w.raw(if (pl.prop) ",\"prop\":true" else ",\"prop\":false");
+                try w.raw(if (pl.placed) ",\"placed\":true" else ",\"placed\":false");
+                inline for (.{ "x", "y", "drawn_x", "drawn_y" }) |f| {
+                    try w.raw(",\"" ++ f ++ "\":");
+                    try w.number(@field(pl, f));
+                }
+                try w.raw("}");
+            }
+            try w.raw("],\"walkways\":[");
+            for (sc.walkways, 0..) |wk, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("[");
+                try w.string(wk.a);
+                try w.raw(",");
+                try w.string(wk.b);
+                try w.raw("]");
+            }
+            try w.raw("],\"exits\":[");
+            for (sc.exits, 0..) |e, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("{\"mark\":");
+                try w.string(e.mark);
+                try w.raw(",\"to_scene\":");
+                try w.string(e.to_scene);
+                try w.raw(",\"to_mark\":");
+                try w.string(e.to_mark);
+                try w.raw("}");
+            }
+            try w.raw("],\"areas\":[");
+            for (sc.areas, 0..) |ar, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("{\"prop\":");
+                try w.string(ar.prop);
+                inline for (.{ "x", "y", "w", "h" }) |f| {
+                    try w.raw(",\"" ++ f ++ "\":");
+                    try w.number(@field(ar, f));
+                }
+                try w.raw(if (ar.in_block) ",\"in_block\":true}" else ",\"in_block\":false}");
+            }
+            try w.raw("],\"grids\":[");
+            for (sc.grids, 0..) |g, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("{\"name\":");
+                try w.string(g.name);
+                inline for (.{ "width", "height", "cell", "origin_x", "origin_y" }) |f| {
+                    try w.raw(",\"" ++ f ++ "\":");
+                    try w.number(@field(g, f));
+                }
+                try w.raw(",\"rects\":[");
+                for (g.rects, 0..) |r, k| {
+                    if (k > 0) try w.raw(",");
+                    try w.raw("{\"attribute\":");
+                    try w.string(r.attribute);
+                    inline for (.{ "x", "y", "width", "height" }) |f| {
+                        try w.raw(",\"" ++ f ++ "\":");
+                        try w.number(@field(r, f));
+                    }
+                    try w.raw("}");
+                }
+                try w.raw("]}");
+            }
+            try w.raw("],\"block\":");
+            if (sc.block) |b| {
+                try self.json_lines(&w, &buf, main_path, dir, b);
+                const path = table_script(&buf, main_path, dir, b.script);
+                // `json_lines` leaves its object open, so the block adds whether it has comments.
+                try w.raw(if (has_comment(self.find(path) orelse "", b.line, b.end_line)) ",\"comments\":true}" else ",\"comments\":false}");
+            } else try w.raw("null");
+            try w.raw("}");
+        }
+        try w.raw("]}");
+        return true;
+    }
+
+    /// Writes `lines` as an object without its closing brace, so a caller can add fields.
+    fn json_lines(self: *Project, w: *Json, buf: []u8, main_path: []const u8, dir: []const u8, lines: compiler.ScriptLines) !void {
+        _ = self;
+        try w.raw("{\"script\":");
+        try w.string(table_script(buf, main_path, dir, lines.script));
+        try w.raw(",\"line\":");
+        try w.number(lines.line);
+        try w.raw(",\"end_line\":");
+        try w.number(lines.end_line);
+    }
+
+    /// A room edit as the page sends it: one record per line, fields split by tabs, which no
+    /// name can hold. `scene<TAB>Name` first, then `mark`/`prop<TAB>Name<TAB>x<TAB>y`,
+    /// `area<TAB>Prop<TAB>x<TAB>y<TAB>w<TAB>h`, `walkway<TAB>A<TAB>B`, and
+    /// `exit<TAB>Mark<TAB>Scene<TAB>Mark`, in the order they are to be written. Plain records
+    /// keep a JSON reader, about 60 KB, out of the module.
+    const RoomEdit = struct {
+        scene: []const u8 = "",
+        /// The block's lines after its header, already in the language.
+        lines: std.ArrayList([]const u8) = .empty,
+    };
+
+    fn parse_room_edit(a: Allocator, text: []const u8) !?RoomEdit {
+        var edit = RoomEdit{};
+        var records = std.mem.splitScalar(u8, text, '\n');
+        while (records.next()) |record| {
+            if (record.len == 0) continue;
+            var f: [6][]const u8 = undefined;
+            var n: usize = 0;
+            var fields = std.mem.splitScalar(u8, record, '\t');
+            while (fields.next()) |field| {
+                if (n == f.len) return null;
+                f[n] = field;
+                n += 1;
+            }
+            const kind = f[0];
+            const num = struct {
+                fn of(t: []const u8) ?u32 {
+                    return std.fmt.parseInt(u32, t, 10) catch null;
+                }
+            }.of;
+            if (std.mem.eql(u8, kind, "scene") and n == 2) {
+                edit.scene = f[1];
+            } else if ((std.mem.eql(u8, kind, "mark") or std.mem.eql(u8, kind, "prop")) and n == 4) {
+                const x = num(f[2]) orelse return null;
+                const y = num(f[3]) orelse return null;
+                try edit.lines.append(a, try std.fmt.allocPrint(a, "  {s} {s} at {d} {d}", .{ kind, try room_name(a, f[1]), x, y }));
+            } else if (std.mem.eql(u8, kind, "area") and n == 6) {
+                var v: [4]u32 = undefined;
+                for (&v, f[2..6]) |*out, t| out.* = num(t) orelse return null;
+                try edit.lines.append(a, try std.fmt.allocPrint(a, "  area {s}: {d} {d} {d} {d}", .{ try room_name(a, f[1]), v[0], v[1], v[2], v[3] }));
+            } else if (std.mem.eql(u8, kind, "walkway") and n == 3) {
+                try edit.lines.append(a, try std.fmt.allocPrint(a, "  walkway {s} to {s}", .{ try room_name(a, f[1]), try room_name(a, f[2]) }));
+            } else if (std.mem.eql(u8, kind, "exit") and n == 4) {
+                try edit.lines.append(a, try std.fmt.allocPrint(a, "  exit {s} to {s} at {s}", .{ try room_name(a, f[1]), try room_name(a, f[2]), try room_name(a, f[3]) }));
+            } else return null;
+        }
+        if (edit.scene.len == 0) return null;
+        return edit;
+    }
+
+    /// Writes one scene's room block from `request` (a `RoomEdit`), P47-03, D-200: the
+    /// block is rewritten whole where it stands, or a first block goes after the scene's own
+    /// `scene` block, in that file's line endings. The project is then checked; when it does
+    /// not check, the script is put back. `result` holds `{"written":true,"script":..,"line":N}`
+    /// when kept, `{"written":false,"refused":".."}` for a request refused before the check,
+    /// or the check's JSON.
+    pub fn write_room(self: *Project, main_path: []const u8, request: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const edit = (try parse_room_edit(a, request)) orelse
+            return self.refuse_room("the room edit is not one the Studio understands");
+        const source = self.find(main_path) orelse return self.refuse_room("the project has no main script");
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const scenes = compiler.room_sources(a, source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        const scene = for (scenes) |sc| {
+            if (std.mem.eql(u8, sc.name, edit.scene)) break sc;
+        } else return self.refuse_room("the script declares no such scene with 'scene <Name>:'");
+
+        // The block's lines, names written as the language reads them.
+        var lines: std.ArrayList([]const u8) = .empty;
+        try lines.append(a, try std.fmt.allocPrint(a, "room {s}:", .{try room_name(a, scene.name)}));
+        try lines.appendSlice(a, edit.lines.items);
+
+        var buf: [1024]u8 = undefined;
+        const target = scene.block orelse scene.declared;
+        const path = try a.dupe(u8, table_script(&buf, main_path, dir, target.script));
+        const old = try self.allocator.dupe(u8, self.find(path) orelse return self.refuse_room("the scene's script is not in the project"));
+        defer self.allocator.free(old);
+        const spliced = if (scene.block) |b|
+            try replace_lines(a, old, b.line, b.end_line, lines.items)
+        else
+            try insert_block(a, old, scene.declared.end_line, lines.items);
+        try self.add(path, spliced.bytes);
+        if (!try self.check(main_path)) {
+            try self.add(path, old);
+            return false;
+        }
+        self.result.clearRetainingCapacity();
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        try w.raw("{\"written\":true,\"script\":");
+        try w.string(path);
+        try w.raw(",\"line\":");
+        try w.number(spliced.line);
+        try w.raw("}");
+        return true;
+    }
+
+    pub fn refuse_room(self: *Project, why: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        try w.raw("{\"written\":false,\"refused\":");
+        try w.string(why);
+        try w.raw("}");
+        return false;
+    }
+
     fn refuse(self: *Project, why: []const u8) !bool {
         self.result.clearRetainingCapacity();
         var w = Json{ .list = &self.result, .allocator = self.allocator };
@@ -389,6 +624,102 @@ const Reader = struct {
         return allocator.dupe(u8, bytes);
     }
 };
+
+/// The table path of a script a diagnostic or listing names: the main script for an empty
+/// name, else the name joined to the main script's folder.
+fn table_script(buf: []u8, main_path: []const u8, dir: []const u8, script: []const u8) []const u8 {
+    if (script.len == 0) return main_path;
+    return join_clean(buf, dir, script) orelse main_path;
+}
+
+/// A name as a room line must write it (D-199): bare when the lexer reads it back as the same
+/// words with no `to` or `at` among them, quoted otherwise. A name holding a double quote
+/// cannot be written at all; the scene could not have declared one.
+fn room_name(a: Allocator, name: []const u8) ![]const u8 {
+    if (std.mem.indexOfScalar(u8, name, '"') != null) return error.UnwritableName;
+    var bare = name.len > 0;
+    var words = std.mem.splitScalar(u8, name, ' ');
+    var first = true;
+    while (words.next()) |word| {
+        if (word.len == 0 or std.mem.eql(u8, word, "to") or std.mem.eql(u8, word, "at")) bare = false;
+        var lex = compiler.lexer.Lexer.init(a, word);
+        const tok = lex.next() catch {
+            bare = false;
+            break;
+        };
+        const ok = tok.tag == .identifier or (!first and tok.tag == .number);
+        if (!ok or tok.slice.len != word.len) bare = false;
+        first = false;
+    }
+    if (bare) return name;
+    return std.fmt.allocPrint(a, "\"{s}\"", .{name});
+}
+
+/// The file's line ending: CRLF when its first line ends so, else LF (D-197 item 1).
+fn line_ending(text: []const u8) []const u8 {
+    const nl = std.mem.indexOfScalar(u8, text, '\n') orelse return "\n";
+    return if (nl > 0 and text[nl - 1] == '\r') "\r\n" else "\n";
+}
+
+/// Byte offset where 1-based line `n` starts; `text.len` past the last line.
+fn line_start(text: []const u8, n: u32) usize {
+    if (n <= 1) return 0;
+    var count: u32 = 1;
+    for (text, 0..) |c, i| if (c == '\n') {
+        count += 1;
+        if (count == n) return i + 1;
+    };
+    return text.len;
+}
+
+const Spliced = struct { bytes: []u8, line: u32 };
+
+/// `text` with lines `from` to `to` replaced by `lines`, in the file's own line ending; a last
+/// line without a newline stays without one.
+fn replace_lines(a: Allocator, text: []const u8, from: u32, to: u32, lines: []const []const u8) !Spliced {
+    const eol = line_ending(text);
+    const start = line_start(text, from);
+    const end = line_start(text, to + 1);
+    const open_end = end == text.len and text.len > 0 and text[text.len - 1] != '\n';
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, text[0..start]);
+    for (lines, 0..) |l, i| {
+        try out.appendSlice(a, l);
+        if (i + 1 < lines.len or !open_end) try out.appendSlice(a, eol);
+    }
+    try out.appendSlice(a, text[end..]);
+    return .{ .bytes = out.items, .line = from };
+}
+
+/// `text` with a blank line and `lines` inserted after line `after`, in the file's own line
+/// ending (D-200 item 1).
+fn insert_block(a: Allocator, text: []const u8, after: u32, lines: []const []const u8) !Spliced {
+    const eol = line_ending(text);
+    const at = line_start(text, after + 1);
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, text[0..at]);
+    if (at == text.len and text.len > 0 and text[text.len - 1] != '\n') try out.appendSlice(a, eol);
+    try out.appendSlice(a, eol);
+    for (lines) |l| {
+        try out.appendSlice(a, l);
+        try out.appendSlice(a, eol);
+    }
+    try out.appendSlice(a, text[at..]);
+    return .{ .bytes = out.items, .line = after + 2 };
+}
+
+/// Whether lines `from` to `to` of `text` hold a `#` comment outside a quoted string.
+fn has_comment(text: []const u8, from: u32, to: u32) bool {
+    const body = text[line_start(text, from)..line_start(text, to + 1)];
+    var quoted = false;
+    for (body) |c| switch (c) {
+        '"' => quoted = !quoted,
+        '\n' => quoted = false,
+        '#' => if (!quoted) return true,
+        else => {},
+    };
+    return false;
+}
 
 fn is_image_word(name: []const u8) bool {
     if (name.len == 0 or name.len > bespoke.image.MAX_NAME or !std.ascii.isAlphabetic(name[0])) return false;
@@ -754,4 +1085,56 @@ test "an import the compiler would refuse adds nothing" {
     try std.testing.expect(result_has(&p, "(0, 0)"));
     try std.testing.expect(p.find("art/odd.png") == null);
     try std.testing.expect(std.mem.indexOf(u8, p.find("main.bespoke").?, "Odd") == null);
+}
+
+test "the room editor writes a first room block after its scene, then rewrites it in place" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    const before = "scene Yard:\r\n  cast: Hero\r\n  marks: Gate, Well\r\n\r\nscene Hall:\r\n  marks: Door\r\n\r\nroutine Stroll(Hero):\r\n  walk Hero to Well\r\n";
+    try p.add("main.bespoke", before);
+    try std.testing.expect(try p.rooms("main.bespoke"));
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    parsed.deinit();
+    try std.testing.expect(result_has(&p, "\"name\":\"Yard\""));
+    try std.testing.expect(result_has(&p, "\"block\":null"));
+    try std.testing.expect(result_has(&p, "\"placed\":false"));
+
+    const first = "scene\tYard\nmark\tGate\t40\t120\nmark\tWell\t200\t132\nwalkway\tGate\tWell\nexit\tWell\tHall\tDoor\n";
+    try std.testing.expect(try p.write_room("main.bespoke", first));
+    try std.testing.expectEqualStrings("scene Yard:\r\n  cast: Hero\r\n  marks: Gate, Well\r\n\r\nroom Yard:\r\n  mark Gate at 40 120\r\n  mark Well at 200 132\r\n  walkway Gate to Well\r\n  exit Well to Hall at Door\r\n\r\nscene Hall:\r\n  marks: Door\r\n\r\nroutine Stroll(Hero):\r\n  walk Hero to Well\r\n", p.find("main.bespoke").?);
+
+    // A second edit replaces the block where it stands and nothing else.
+    const second = "scene\tYard\nmark\tGate\t41\t121\nmark\tWell\t200\t132\n";
+    try std.testing.expect(try p.write_room("main.bespoke", second));
+    try std.testing.expectEqualStrings("scene Yard:\r\n  cast: Hero\r\n  marks: Gate, Well\r\n\r\nroom Yard:\r\n  mark Gate at 41 121\r\n  mark Well at 200 132\r\n\r\nscene Hall:\r\n  marks: Door\r\n\r\nroutine Stroll(Hero):\r\n  walk Hero to Well\r\n", p.find("main.bespoke").?);
+    try std.testing.expect(try p.rooms("main.bespoke"));
+    const again = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    again.deinit();
+    try std.testing.expect(result_has(&p, "\"comments\":false"));
+}
+
+test "a room edit the compiler refuses puts the script back" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    const before = "scene Yard:\n  marks: Gate, Well\n";
+    try p.add("main.bespoke", before);
+    // Well is not placed.
+    try std.testing.expect(!try p.write_room("main.bespoke", "scene\tYard\nmark\tGate\t1\t1\n"));
+    try std.testing.expect(result_has(&p, "does not place mark 'Well'"));
+    try std.testing.expectEqualStrings(before, p.find("main.bespoke").?);
+    try std.testing.expect(!try p.write_room("main.bespoke", "scene\tCellar\n"));
+    try std.testing.expect(result_has(&p, "no such scene"));
+    try std.testing.expect(!try p.write_room("main.bespoke", "scene\tYard\nmark\tGate\tx\t1\n"));
+    try std.testing.expect(result_has(&p, "not one the Studio understands"));
+}
+
+test "room names are written bare when the lexer reads them back, quoted otherwise" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("Old Gate", try room_name(a, "Old Gate"));
+    try std.testing.expectEqualStrings("\"Way to Town\"", try room_name(a, "Way to Town"));
+    try std.testing.expectEqualStrings("\"Keeper's Lodge\"", try room_name(a, "Keeper's Lodge"));
+    try std.testing.expect(has_comment("a\n  # note\nb\n", 1, 3));
+    try std.testing.expect(!has_comment("a \"#1\"\nb\n", 1, 2));
 }

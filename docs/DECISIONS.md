@@ -2521,6 +2521,21 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** exact art-pixel positions throughout the engine, rejected as a much larger change to spatial, rendering, hit tests, saves, and packages for at most 2 art pixels; walkways added to the chain, rejected because two marks could never be kept apart; unplaced marks on their default spot, rejected because it rarely matches a painted backdrop.
 
+## D-200 The Room Editor Writes Only Room Blocks, Placing What a Scene Lists (2026-11-27, status: accepted; P47-03, follows D-198 and D-199)
+
+**Context.** P47-03 is the Studio's room editor over the room blocks P47-11 added (D-199). D-198 has it own one block per scene and rewrite it whole. Four points were left: where a first block goes, whether the editor may add marks and props, the grid, and the backdrop, which live outside room blocks. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **A first block follows its scene.** A scene with no room block gets one directly after its `scene <Name>:` block, in the file that declares it, in that file's own line endings. An existing block is rewritten in place, whole (D-198 item 4).
+2. **Place what the scene lists.** The editor positions, joins, and links the marks and props the scene's `marks:` and `props:` lines name, and sets their areas and exits; it never edits a `scene` block. Adding names comes later, with the cast editor (P47-05).
+3. **Grids are shown, not edited.** A scene's grid cells draw over the backdrop read-only; editing grid blocks is its own item (P47-12).
+4. **The backdrop is shown, not chosen.** The editor draws the scene's backdrop, or the neutral stage without one; `backdrop:` stays hand-written for now.
+5. **As every Studio write:** the rewritten script is checked with the compiler before it is kept, and the change is undone when it does not check (D-197 item 4); Save writes it after the on-disk check (D-196 item 5). A block that holds comments is rewritten only after the author agrees to lose them.
+
+**Consequences.** The editor shows each mark where the engine will draw it, snapped through the same mapping as `spatial.art_to_world` and its inverse `spatial.world_to_art`, and writes the art pixel the author chose; the module, not the page, writes the block text, so its names are quoted exactly when the lexer needs them. The supported compiler surface gains `room_sources` (with `SceneRoom`, `RoomPlace`, and `ScriptLines`), parse-only like `art_sources`, listing each scene's lines, places, walkways, exits, areas, grids, and room block across included files; scenes and room blocks record their line ranges in the parser. The page sends an edit as tab-separated records rather than JSON, which kept about 45 KB of JSON reader out of the module: `bespoke-studio.wasm` went from 512,533 to 532,042 bytes (2026-11-27). Undo restores the edited script's exact earlier bytes, so undoing a scene's first edit leaves no block behind. A first walkway edit on a scene that still uses the default chain writes the chain out as walkways first, so nothing it joined comes apart.
+
+**Alternatives:** a first block after the file's last room block, rejected so a scene and its layout read together; adding marks and props here, deferred because it edits the `scene` block; grid and backdrop editing, deferred for the same reason.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

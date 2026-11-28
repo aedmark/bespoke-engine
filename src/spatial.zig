@@ -43,6 +43,17 @@ pub fn art_to_world(x: u32, y: u32) Point2D {
     return .{ .x = round_div(fx - WORLD_ORIGIN_X, WORLD_UNIT_X), .y = round_div(fy - WORLD_ORIGIN_Y, WORLD_UNIT_Y) };
 }
 
+/// The art pixel whose centre is nearest, from the left and above, to where world `p` is drawn,
+/// clamped to the art: the inverse a tool uses to show a world point on the art (D-200).
+/// `art_to_world(world_to_art(p))` gives `p` back for any point drawn inside the art.
+pub fn world_to_art(p: Point2D) struct { x: u32, y: u32 } {
+    const fx = WORLD_ORIGIN_X + p.x * WORLD_UNIT_X - @divTrunc(ART_FRAME_SCALE, 2);
+    const fy = WORLD_ORIGIN_Y + p.y * WORLD_UNIT_Y - @divTrunc(ART_FRAME_SCALE, 2);
+    const ax = std.math.clamp(@divFloor(fx, ART_FRAME_SCALE), 0, 319);
+    const ay = std.math.clamp(@divFloor(fy, ART_FRAME_SCALE), 0, 179);
+    return .{ .x = @intCast(ax), .y = @intCast(ay) };
+}
+
 /// `a / b` rounded to the nearest whole number, halves away from zero; `b` is positive.
 fn round_div(a: i32, b: i32) i32 {
     return if (a >= 0) @divTrunc(a + @divTrunc(b, 2), b) else -@divTrunc(-a + @divTrunc(b, 2), b);
@@ -64,6 +75,18 @@ pub const Exit = struct {
     /// exits leave it null: their marks are declared.
     add_at: ?struct { x: i32, y: i32 } = null,
 };
+
+test "D-200: world_to_art inverts art_to_world for every point drawn inside the art" {
+    var wy: i32 = -31;
+    while (wy <= 28) : (wy += 1) {
+        var wx: i32 = -15;
+        while (wx <= 55) : (wx += 1) {
+            const p = Point2D{ .x = wx, .y = wy };
+            const a = world_to_art(p);
+            try std.testing.expectEqual(p, art_to_world(a.x, a.y));
+        }
+    }
+}
 
 test "D-199: art pixels snap to the nearest world unit" {
     // Frame (280, 380) is world (0, 0): art pixel (70, 95) has its centre at frame (282, 382).
