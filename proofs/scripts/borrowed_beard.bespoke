@@ -1,0 +1,103 @@
+scene: Inn Landing
+cast: Tamsin, CaptainRook
+props: RookDoor, WashStand
+marks: Room4, Room7, Stairs
+
+scene: Net Loft Yard
+cast: Bramble
+props: GateGap, RainBarrel
+marks: YardPath, GateMark, DogBed
+
+scene: Harbour Office
+cast: PurserWick
+props: BerthCounter, PacketBoat
+marks: OfficeDoor, CounterMark, Quay
+
+Taped is a state, which can be taped or untaped. The gap is untaped in the scene.
+Startled is a state, which can be startled or calm. The dog is calm in the scene.
+Disguised is a state, which can be disguised or undisguised. Tamsin is undisguised in the scene.
+HasBerthTicket is a state, which can be held or unheld.
+
+on cue Uses(Tamsin, WashStand):
+  if not Carries(Tamsin, Charcoal):
+    say Tamsin: "I'll take the charcoal stick, the roll of sail tape, and this pot of honey from my washstand."
+    remember Carries(Tamsin, Charcoal)
+    remember Carries(Tamsin, SailTape)
+    remember Carries(Tamsin, HoneyPot)
+
+on cue Uses(Tamsin, RainBarrel):
+  if not Carries(Tamsin, WateringCan):
+    say Tamsin: "A watering can, still half full. That could be useful."
+    remember Carries(Tamsin, WateringCan)
+
+routine RookPacing(CaptainRook):
+  loop:
+    walk CaptainRook to Room7
+    remember AtHisDoor(CaptainRook, true) ~ he guards his coat while he stands here
+    wait 30 ticks
+    forget AtHisDoor(CaptainRook)
+    walk CaptainRook to Stairs
+    wait 30 ticks
+
+routine DogNapping(Bramble):
+  loop:
+    wait 40 ticks
+    say Bramble: "Wuff..."
+
+on cue Uses(Tamsin, RookDoor):
+  if AtHisDoor(CaptainRook):
+    say Tamsin: "Not with Rook standing right there. I'll wait till he's off down the landing."
+  if not AtHisDoor(CaptainRook):
+    if not Carries(Tamsin, RookPapers):
+      say Tamsin: "Rook's sailing papers are poking out of his coat on the door peg. I'll borrow them."
+      remember Carries(Tamsin, RookPapers)
+
+on cue Uses(Tamsin, Charcoal, RookPapers):
+  say Tamsin: "Rook's portrait has no beard! A few strokes of charcoal, and now it does."
+  remember PapersMarked(Tamsin, true)
+
+on cue Uses(Tamsin, SailTape, GateGap):
+  now GateGap is taped
+  say Tamsin: "I've stretched sail tape across the bottom of the gap under the gate."
+
+on cue Uses(Tamsin, WateringCan, Bramble):
+  if GateGap is not taped:
+    say Tamsin: "Soaking the dog now won't help; the gap under the gate isn't taped."
+  if GateGap is taped:
+    now Bramble is startled
+    animate (Bramble, dog-fleeing)
+    walk Bramble to GateMark
+    say Tamsin: "The soaked dog bolts under the gate, leaving a thick tuft of grey fur on the tape!"
+    remember GapHasFur(GateGap, true)
+
+on cue Uses(Tamsin, GateGap):
+  if GapHasFur(GateGap):
+    say Tamsin: "I'll peel the tape off. One strip of genuine grey dog fur."
+    remember Carries(Tamsin, DogFur)
+    forget GapHasFur(GateGap)
+    now GateGap is not taped
+
+on cue Uses(Tamsin, DogFur, HoneyPot):
+  say Tamsin: "I dab honey on my chin and press the fur firmly in place."
+  forget Carries(Tamsin, DogFur)
+  forget Carries(Tamsin, HoneyPot)
+  remember Carries(Tamsin, GreyBeard)
+  remember StickyChin(Tamsin, true)
+
+on cue Uses(Tamsin, GreyBeard, Tamsin):
+  if PapersMarked(Tamsin):
+    say Tamsin: "With Rook's papers and my bristling grey beard, the likeness is uncanny!"
+    remember Disguised(Tamsin, true)
+  if not PapersMarked(Tamsin):
+    say Tamsin: "The beard's on, but Rook's portrait is still clean-shaven. I need to fix his papers."
+
+on cue TalksTo(Tamsin, PurserWick):
+  choice "I'd like a berth on the packet boat." if not Disguised(Tamsin):
+    say PurserWick: "Sorry, miss. The last berth is held for Captain Ansel Rook."
+  choice "I am Captain Ansel Rook. I've come for my berth." if Disguised(Tamsin):
+    say PurserWick: "Captain Rook! That's a fine beard you're growing. Here's your berth ticket."
+    remember HasBerthTicket(Tamsin, true)
+  choice "Whose dog is that in the yard?":
+    say PurserWick: "That's Bramble, the net-mender's dog. Don't you go upsetting him."
+  choice "Good day.":
+    say PurserWick: "Fair winds, miss."

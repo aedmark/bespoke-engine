@@ -16,33 +16,7 @@ const host = bespoke.host;
 const ListWriter = bespoke.ListWriter;
 const display = bespoke.display;
 
-pub const LONG_GALLERY_SCRIPT =
-    \\scene: Long Gallery
-    \\cast: Audra
-    \\props: VelvetRope
-    \\marks: Window, Bench
-    \\
-    \\scene: Locked Studio
-    \\cast: Corin, Pell
-    \\props: EaselBoard
-    \\marks: Easel, Corner
-    \\
-    \\relation Hides(who)
-    \\relation Found(who)
-    \\
-    \\remember Hides(Pell)
-    \\
-    \\agenda FindPell:
-    \\  actor Corin
-    \\  target Pell
-    \\  once
-    \\  requires Hides(Pell)
-    \\
-    \\on cue Intercepts(Corin, Pell, FindPell):
-    \\  say Corin: "Caught you at the easel."
-    \\  remember Found(Pell)
-    \\  forget Hides(Pell)
-;
+pub const LONG_GALLERY_SCRIPT = @embedFile("scripts/long_gallery.bespoke");
 
 /// The theme's binding for V, which toggles the watched view.
 const WATCH_ACTION: u16 = 1;

@@ -14,72 +14,7 @@ const art = @import("art.zig");
 const host = bespoke.host;
 const grid = bespoke.grid;
 
-pub const GRID_PUZZLE_SCRIPT =
-    \\scene: Hollin Keep Gallery
-    \\cast: Wren
-    \\props: Trough, Bucket, WallTorch, Tapestry, HiddenDoor
-    \\marks: TroughMark, TorchMark, TapestryWest, TapestryMid, TapestryEast, DoorMark
-    \\
-    \\relation Carries(holder, item)
-    \\relation WaypointBlocked(mark)
-    \\
-    \\remember Carries(Wren, Bucket)
-    \\remember WaypointBlocked(DoorMark)
-    \\
-    \\grid GalleryFloor in "Hollin Keep Gallery":
-    \\  size 6 1
-    \\  cell 8
-    \\  flammable 2 0 4 1
-    \\  place TroughMark 0 0
-    \\  place TorchMark 1 0
-    \\  place TapestryWest 2 0
-    \\  place TapestryMid 3 0
-    \\  place TapestryEast 4 0
-    \\  place DoorMark 5 0
-    \\  burn 8
-    \\  spread 3
-    \\  dissipate 4
-    \\  flow 1
-    \\
-    \\on cue LooksAt(Wren, Trough):
-    \\  say Wren: "Rainwater, cold and deep enough for a bucket."
-    \\
-    \\on cue LooksAt(Wren, Tapestry):
-    \\  say Wren: "A moth-eaten hunting scene over dry rushes. Air moves behind it."
-    \\
-    \\on cue LooksAt(Wren, WallTorch):
-    \\  say Wren: "The only light in the gallery, and the only flame."
-    \\
-    \\on cue Fills(Wren, Bucket):
-    \\  Bucket is full
-    \\  say Wren: "The bucket is full and heavy."
-    \\
-    \\on cue Ignites(Wren, Tapestry):
-    \\  say Wren: "The torch touches the hem. It goes up like hay."
-    \\
-    \\on cue Reveals(Wren, HiddenDoor):
-    \\  forget WaypointBlocked(DoorMark)
-    \\  say Wren: "There, behind the burning cloth: a door!"
-    \\
-    \\on cue Throws(Wren, Bucket):
-    \\  Bucket is not full
-    \\  say Wren: "Water across the door before it catches!"
-    \\
-    \\on cue Collapses(Wren, HiddenDoor):
-    \\  HiddenDoor is burned
-    \\  say Wren: "The lintel gives way. That door is lost."
-    \\
-    \\when Wren is InBurningCell:
-    \\  Wren is scorched
-    \\  say Wren: "Fire! My cloak is alight!"
-    \\
-    \\when Wren is InSmokeCell:
-    \\  say Wren: "Smoke. Keep low and keep moving."
-    \\
-    \\when Wren arrives at DoorMark:
-    \\  Wren is escaped
-    \\  say Wren: "Night air. I am out of the keep."
-;
+pub const GRID_PUZZLE_SCRIPT = @embedFile("scripts/grid_puzzle.bespoke");
 
 /// Cell indexes in the script's one-row grid. `proofs/art.zig` draws the same layout; the
 /// layout test below fails if the script and these constants drift apart.

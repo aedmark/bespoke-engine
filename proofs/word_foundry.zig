@@ -10,44 +10,7 @@ const golden = @import("golden_digest.zig");
 const host = bespoke.host;
 const spell = bespoke.spell;
 
-pub const WORD_FOUNDRY_SCRIPT =
-    \\scene: TheWordFoundry
-    \\cast: Maren
-    \\props: Bellows, ColdHearth, PatternBook, Crucible
-    \\marks: Bench, Anvil
-    \\
-    \\relation Knows(who, what)
-    \\
-    \\spellbook FoundryLexicon:
-    \\  power Spark, Forge
-    \\  element Ember, Water
-    \\  form Bolt, Ward
-    \\  spell Kindle: Forge, Ember, Bolt
-    \\  spell Quench: Spark, Water, Ward
-    \\
-    \\on cue LooksAt(Maren, Bellows):
-    \\  say Maren: "Bellows: a spark to start the fire, and the forge for the long heat."
-    \\  remember Knows(Maren, Spark)
-    \\  remember Knows(Maren, Forge)
-    \\
-    \\on cue LooksAt(Maren, ColdHearth):
-    \\  say Maren: "Embers still red in the grate, and a kettle of water on the hook."
-    \\  remember Knows(Maren, Ember)
-    \\  remember Knows(Maren, Water)
-    \\
-    \\on cue LooksAt(Maren, PatternBook):
-    \\  say Maren: "Two plates: one a bolt of light, the other a standing ward."
-    \\  remember Knows(Maren, Bolt)
-    \\  remember Knows(Maren, Ward)
-    \\
-    \\on cue Kindle(Maren, Crucible):
-    \\  say Maren: "Forge, ember, bolt. The crucible holds the light."
-    \\  Crucible is glowing
-    \\
-    \\on cue Quench(Maren, Crucible):
-    \\  say Maren: "Spark, water, ward. The metal goes still and hard."
-    \\  Crucible is tempered
-;
+pub const WORD_FOUNDRY_SCRIPT = @embedFile("scripts/word_foundry.bespoke");
 
 pub const Ids = struct {
     scene: bespoke.EntityId,

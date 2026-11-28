@@ -1,0 +1,174 @@
+scene: Tidewalk
+cast: Tamsin, BosunPike, OldGannet, DoryQuill
+marks: TidewalkWest, TidewalkMid, TidewalkEast
+
+scene: Fencing Yard
+cast: Vell
+marks: YardGate, YardCircle, YardDoor
+
+scene: Drowned Lantern
+cast: Barkeep, Citizen
+marks: LanternDoor, CounterMark, FireplaceMark
+
+duel BrackwaterBarbs:
+  pair Barb1:
+    challenge "You wield that sword like a mop handle!"
+    reply "Good, then that means I can still wipe the floor with you."
+    variant 1 "I've seen housemaids wield a grittier scour!"
+  pair Barb2:
+    challenge "I've sunk ships with less effort than this!"
+    reply "Was that before or after you climbed aboard?"
+    variant 1 "Whole fleets have turned tail at the sight of me!"
+  pair Barb3:
+    challenge "Your parries are slower than the waning tide!"
+    reply "This tide is patient; I always come back!"
+    variant 1 "I'll have you beaten before the sun rises!"
+  pair Barb4:
+    challenge "My grandmother lunges better than you!"
+    reply "Then bring her. I'd like a real fight."
+    variant 1 "My old, blind tutor could best you with one hand!"
+  pair Barb5:
+    challenge "You'll be feeding the gulls by sundown!"
+    reply "Unfortunately for you, they'll be too busy picking apart your reputation."
+    variant 1 "The crabs are already laying the table for you!"
+  pair Barb6:
+    challenge "I wielded a blade before I learned to walk!"
+    reply "And you've been tripping over yourself ever since."
+    variant 1 "I was crossing blades while you were crossing the schoolyard!"
+  pair Barb7:
+    challenge "Your sword is as dull as your intellect!"
+    reply "How convenient! You'll be asleep for the final blow!"
+    variant 1 "Every thrust of your sword bores me endlessly!"
+  pair Barb8:
+    challenge "I'll carve my initials in your chest!"
+    reply "Do take your time; I know how much you struggle with spelling."
+    variant 1 "I'll engrave my name on your scalp!"
+  pair Barb9:
+    challenge "You smell like a fishmonger's apron!"
+    reply "I find the fragrance befitting for the occasion, don't you?"
+    variant 1 "Phew, with that stench... I can see gulls follow you for a reason!"
+  pair Barb10:
+    challenge "I've eaten better fencers than you for breakfast!"
+    reply "Then you must be starving by now."
+    variant 1 "I dine from the skulls of my vanquished enemies!"
+  pair Barb11:
+    challenge "Your stance is a disgrace to the guild!"
+    reply "And your personality is an insult to humanity!"
+    variant 1 "Your technique is an abomination to fencing."
+  pair Barb12:
+    challenge "Surrender now and I'll spare your dignity!"
+    reply "Too late. You spent yours on that suit."
+    variant 1 "Kneel and I may let you keep your pride!"
+  pair Barb13:
+    challenge "I've got more scars than you've had hot dinners!"
+    reply "Fencing that badly, I'm not surprised."
+    variant 1 "Every mark on my arms is a duel I've won!"
+  pair Barb14:
+    challenge "My cousin could beat you with a spoon!"
+    reply "Not to worry; it'll be the sharpest thing on your side."
+    variant 1 "I could best you armed only with a soup ladle!"
+  pair Barb15:
+    challenge "You'll be begging for mercy before the bell rings!"
+    reply "I'll ring it myself, so they know when to collect you."
+    variant 1 "By the next chime you'll be on your knees!"
+  fallback "Er... is that the time?"
+  fallback "I have to return some video tapes."
+  fallback "I think I left my oven on! Gotta go!"
+  fallback "Is that a sea gull on your head or are you just happy to see me?"
+  fallback "I'd give you an answer but my parrot usually does all the talking..."
+  fallback "Hold that thought! ...I might be getting a nosebleed."
+  fallback "I think I hear my mom calling me for dinner."
+  fallback "I wish I'd thought of that one..."
+  win 3
+  relations HeardBarb MasteredComeback Counters VellVariant FencingTier Advantage DuelsWon
+  tier Vell 1
+  fatigue Inquiries "welcoming":
+    stage AnnoyedWith 2 100 "annoyed"
+    stage FuriousWith 3 250 "furious"
+
+relation MasteredComeback(fighter, comeback)
+
+~ Mistress Vell knows every comeback. The Tidewalk fencers' barbs and comebacks are dealt
+~ at random when the game starts (D-082); an answer a fencer knows parries Tamsin's barb
+~ and teaches her it.
+remember MasteredComeback(Vell, Barb1Reply)
+remember MasteredComeback(Vell, Barb2Reply)
+remember MasteredComeback(Vell, Barb3Reply)
+remember MasteredComeback(Vell, Barb4Reply)
+remember MasteredComeback(Vell, Barb5Reply)
+remember MasteredComeback(Vell, Barb6Reply)
+remember MasteredComeback(Vell, Barb7Reply)
+remember MasteredComeback(Vell, Barb8Reply)
+remember MasteredComeback(Vell, Barb9Reply)
+remember MasteredComeback(Vell, Barb10Reply)
+remember MasteredComeback(Vell, Barb11Reply)
+remember MasteredComeback(Vell, Barb12Reply)
+remember MasteredComeback(Vell, Barb13Reply)
+remember MasteredComeback(Vell, Barb14Reply)
+remember MasteredComeback(Vell, Barb15Reply)
+
+on cue WinsDuel(BosunPike, Tamsin):
+  say BosunPike: "Ha! Go back to your mop, landlubber."
+
+on cue WinsDuel(Tamsin, BosunPike):
+  say BosunPike: "Enough! Take the Tidewalk, it's yours."
+
+on cue WinsDuel(OldGannet, Tamsin):
+  say OldGannet: "Forty years on these docks. Did you think you'd be the one?"
+
+on cue WinsDuel(Tamsin, OldGannet):
+  say OldGannet: "Bah. My knees gave out before my wits did."
+
+on cue WinsDuel(DoryQuill, Tamsin):
+  say DoryQuill: "Back to the nets with you, minnow."
+
+on cue WinsDuel(Tamsin, DoryQuill):
+  say DoryQuill: "Hooked and landed. Fair catch."
+
+on cue WinsDuel(Vell, Tamsin):
+  say Vell: "Come back when your tongue is as sharp as your blade."
+
+on cue WinsDuel(Tamsin, Vell):
+  say Vell: "Well struck. Brackwater has a new champion."
+
+routine PatrolTidewalk(BosunPike):
+  loop:
+    walk BosunPike to TidewalkWest
+    wait 30 ticks
+    walk BosunPike to TidewalkEast
+    wait 30 ticks
+
+routine PatrolGannet(OldGannet):
+  loop:
+    wait 20 ticks
+    walk OldGannet to TidewalkMid
+    wait 25 ticks
+    walk OldGannet to TidewalkEast
+
+routine PatrolDory(DoryQuill):
+  loop:
+    walk DoryQuill to TidewalkMid
+    wait 35 ticks
+    walk DoryQuill to TidewalkWest
+    wait 15 ticks
+
+routine BarkeepTending(Barkeep):
+  loop:
+    walk Barkeep to CounterMark
+    wait 40 ticks
+    say Barkeep: "Finest cider in Brackwater!"
+    wait 40 ticks
+
+on cue TalksTo(Tamsin, Barkeep):
+  choice "Tell me about Harbourmaster Odell." if not Inquired(Tamsin, Odell, _):
+    say Barkeep: "Odell? Counts every barrel twice and trusts nobody once."
+    remember Inquired(Tamsin, Odell, 1)
+  choice "Tell me more about Harbourmaster Odell." if Inquired(Tamsin, Odell, 1):
+    say Barkeep: "I've told you already. His office is above the customs shed."
+    remember Inquired(Tamsin, Odell, 2)
+    remember AnnoyedWith(Barkeep, Tamsin) for 100 ticks
+  choice "About Harbourmaster Odell..." if AnnoyedWith(Barkeep, Tamsin):
+    say Barkeep: "Ask me once more and you'll be drinking from the canal!"
+    remember FuriousWith(Barkeep, Tamsin) for 250 ticks
+  choice "Got any work for a fencer?":
+    say Barkeep: "Try the yard by the lighthouse. Ask for Mistress Vell."

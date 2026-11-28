@@ -1,0 +1,169 @@
+scene: TheCinderTable
+cast: Maren, Ossic, Ines
+props: TallyBoard, Tokens
+marks: Bench, Stove
+
+entity Salt, Reed, Cinder
+entity SaltOne, SaltTwo, SaltThree, SaltFour
+entity ReedOne, ReedTwo, ReedThree, ReedFour
+entity CinderOne, CinderTwo, CinderThree, CinderFour
+
+relation Knows(who, what)
+relation Played(who, what)
+relation Turn(who)
+relation SuitLed(suit)
+relation Void(who, suit)
+relation Chose(decision, option)
+
+remember Knows(Maren, SaltOne)
+remember Knows(Maren, CinderOne)
+remember Knows(Maren, CinderTwo)
+remember Knows(Maren, SaltTwo)
+remember Knows(Ossic, SaltThree)
+remember Knows(Ossic, ReedOne)
+remember Knows(Ossic, ReedTwo)
+remember Knows(Ossic, ReedThree)
+remember Knows(Ines, SaltFour)
+remember Knows(Ines, CinderThree)
+remember Knows(Ines, CinderFour)
+remember Knows(Ines, ReedFour)
+remember Turn(Maren)
+remember TrickEmpty(TheCinderTable)
+
+decision LeadMaren:
+  actor Maren
+  fires CardPlayed
+  requires Turn(Maren)
+  option SaltOne:
+    picks 6 when TrickEmpty(TheCinderTable)
+  option CinderOne:
+    picks 5 when TrickOpen(TheCinderTable)
+  option CinderTwo:
+    picks 4 when TrickOpen(TheCinderTable)
+    picks 6 when Void(Ossic, Cinder)
+  option SaltTwo:
+    picks 3 when TrickOpen(TheCinderTable)
+
+decision FollowOssic:
+  actor Ossic
+  fires CardPlayed
+  requires Turn(Ossic)
+  option SaltThree:
+    picks 3 when SuitLed(Salt)
+  option ReedOne:
+    picks 2 when SuitLed(Cinder)
+  option ReedTwo:
+    picks 1 when SuitLed(Cinder)
+  option ReedThree:
+    picks 3 when SuitLed(Salt)
+
+decision FollowInes:
+  actor Ines
+  fires CardPlayed
+  requires Turn(Ines)
+  option SaltFour:
+    picks 3 when SuitLed(Salt)
+  option CinderThree:
+    picks 3 when SuitLed(Cinder)
+  option CinderFour:
+    picks 2 when SuitLed(Cinder)
+  option ReedFour:
+    picks 1 when SuitLed(Salt)
+
+on cue CardPlayed(Maren, SaltOne):
+  remember Played(Maren, SaltOne)
+  forget Knows(Maren, SaltOne)
+  forget SuitLed(Salt)
+  forget SuitLed(Reed)
+  forget SuitLed(Cinder)
+  remember SuitLed(Salt)
+  forget TrickEmpty(TheCinderTable)
+  remember TrickOpen(TheCinderTable)
+  forget Turn(Maren)
+  remember Turn(Ossic)
+
+on cue CardPlayed(Maren, CinderOne):
+  remember Played(Maren, CinderOne)
+  forget Knows(Maren, CinderOne)
+  forget SuitLed(Salt)
+  forget SuitLed(Reed)
+  forget SuitLed(Cinder)
+  remember SuitLed(Cinder)
+  forget TrickEmpty(TheCinderTable)
+  remember TrickOpen(TheCinderTable)
+  forget Turn(Maren)
+  remember Turn(Ossic)
+
+on cue CardPlayed(Maren, CinderTwo):
+  remember Played(Maren, CinderTwo)
+  forget Knows(Maren, CinderTwo)
+  forget SuitLed(Salt)
+  forget SuitLed(Reed)
+  forget SuitLed(Cinder)
+  remember SuitLed(Cinder)
+  forget TrickEmpty(TheCinderTable)
+  remember TrickOpen(TheCinderTable)
+  forget Turn(Maren)
+  remember Turn(Ossic)
+
+on cue CardPlayed(Maren, SaltTwo):
+  remember Played(Maren, SaltTwo)
+  forget Knows(Maren, SaltTwo)
+  forget SuitLed(Salt)
+  forget SuitLed(Reed)
+  forget SuitLed(Cinder)
+  remember SuitLed(Salt)
+  forget TrickEmpty(TheCinderTable)
+  remember TrickOpen(TheCinderTable)
+  forget Turn(Maren)
+  remember Turn(Ossic)
+
+on cue CardPlayed(Ossic, SaltThree):
+  remember Played(Ossic, SaltThree)
+  forget Knows(Ossic, SaltThree)
+  forget Turn(Ossic)
+  remember Turn(Ines)
+
+on cue CardPlayed(Ossic, ReedOne):
+  remember Played(Ossic, ReedOne)
+  forget Knows(Ossic, ReedOne)
+  remember Void(Ossic, Cinder)
+  say Ossic: "No cinder left. I throw this one away."
+  forget Turn(Ossic)
+  remember Turn(Ines)
+
+on cue CardPlayed(Ossic, ReedTwo):
+  remember Played(Ossic, ReedTwo)
+  forget Knows(Ossic, ReedTwo)
+  forget Turn(Ossic)
+  remember Turn(Ines)
+
+on cue CardPlayed(Ossic, ReedThree):
+  remember Played(Ossic, ReedThree)
+  forget Knows(Ossic, ReedThree)
+  forget Turn(Ossic)
+  remember Turn(Ines)
+
+on cue CardPlayed(Ines, SaltFour):
+  remember Played(Ines, SaltFour)
+  forget Knows(Ines, SaltFour)
+  forget Turn(Ines)
+  remember Turn(Maren)
+
+on cue CardPlayed(Ines, CinderThree):
+  remember Played(Ines, CinderThree)
+  forget Knows(Ines, CinderThree)
+  forget Turn(Ines)
+  remember Turn(Maren)
+
+on cue CardPlayed(Ines, CinderFour):
+  remember Played(Ines, CinderFour)
+  forget Knows(Ines, CinderFour)
+  forget Turn(Ines)
+  remember Turn(Maren)
+
+on cue CardPlayed(Ines, ReedFour):
+  remember Played(Ines, ReedFour)
+  forget Knows(Ines, ReedFour)
+  forget Turn(Ines)
+  remember Turn(Maren)

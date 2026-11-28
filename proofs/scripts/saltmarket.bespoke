@@ -1,0 +1,46 @@
+scene: Saltmarket
+cast: Tamsin, BrokerQuince
+props: Logbook
+marks: Entrance, StallMark, CunningGate, MuscleGate, CrewGate, LogbookMark
+
+relation Chosen(actor, approach)
+relation Solved(actor, approach)
+relation Acquired(actor, item)
+relation WaypointBlocked(mark)
+
+path Cunning:
+  remember Chosen(Tamsin, Cunning)
+  remember WaypointBlocked(MuscleGate)
+  remember WaypointBlocked(CrewGate)
+  routine SolveCunning(Tamsin):
+    say Tamsin: "The tally book's margin points to a false bill of lading. The logbook is tucked behind it."
+    remember Solved(Tamsin, Cunning)
+    remember Acquired(Tamsin, Logbook)
+
+path Muscle:
+  remember Chosen(Tamsin, Muscle)
+  remember WaypointBlocked(CunningGate)
+  remember WaypointBlocked(CrewGate)
+  routine SolveMuscle(Tamsin):
+    say Tamsin: "Quince's porter folds under one good shove. The back room gives up the logbook."
+    remember Solved(Tamsin, Muscle)
+    remember Acquired(Tamsin, Logbook)
+
+path Crew:
+  remember Chosen(Tamsin, Crew)
+  remember WaypointBlocked(CunningGate)
+  remember WaypointBlocked(MuscleGate)
+  routine SolveCrew(Tamsin):
+    say Tamsin: "The net-menders know the back way in. We split the reward and walk out together."
+    remember Solved(Tamsin, Crew)
+    remember Acquired(Tamsin, Logbook)
+
+on cue Talk(Tamsin, BrokerQuince):
+  choice "Read the tally book" if PathActive(Cunning):
+    say BrokerQuince: "The tally book was always the map, Miss Tamsin."
+  choice "Force the stall" if PathActive(Muscle):
+    say BrokerQuince: "Not the bills of lading! Take the logbook!"
+  choice "Recruit the net-menders" if PathActive(Crew):
+    say BrokerQuince: "A share for every hand. That is how the Saltmarket survives."
+  choice "Leave Quince's stall":
+    say BrokerQuince: "Come back when you know what you want."

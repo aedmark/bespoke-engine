@@ -1,0 +1,171 @@
+scene: "Wren's Attic"
+cast: Wren, PilotAshe
+props: WeathercockProp, WritingDesk
+marks: CotMark, DeskMark, AtticStairs
+
+scene: "The Customs House"
+cast: Wren, Pell
+props: CrankProp, SluiceProp
+marks: LedgerMark, CountingFloor, SluiceMark
+
+scene: "Beacon Hill"
+cast: Wren, HesterQuill
+props: FogWhirlProp, NoteProp
+marks: HillCrest, WhirlMark, PostBoxMark
+
+BranchStatus is a state, which can be stable or active. The month is stable in the scene.
+SluiceStatus is a state, which can be shut or open. The sluice is shut in the scene.
+NoteStatus is a state, which can be pending or delivered. The note is pending in the scene.
+KeystoneStatus is a state, which can be attic or whirl. The weathercock is attic in the scene.
+
+on cue LooksAt(Wren, WritingDesk):
+  say Wren: "My writing desk. Hester Quill's storm almanac lies open at a page I haven't read yet."
+
+on cue LooksAt(Wren, WeathercockProp):
+  say Wren: "The copper weathercock off the Customs House roof, bent and dripping. The Customs House still has its own."
+
+on cue LooksAt(Wren, PilotAshe):
+  say Wren: "A man in a pilot's oilskins, wet through, with weed in his beard. He drowned before I was born."
+
+on cue TalksTo(Wren, PilotAshe):
+  say PilotAshe: "Twenty-eight days, six hours, forty-two minutes, twelve seconds. Then the gale comes and this month goes with it."
+  say PilotAshe: "Follow the current, Wren. Put back what fell, before the month runs out."
+  remember EchoWarnings(Wren, 1)
+
+on cue LooksAt(Wren, CrankProp):
+  say Wren: "The sluice crank, hung on its hook by the door. Ashe says the sluice must be opened."
+
+on cue LooksAt(Wren, SluiceProp):
+  say Wren: "The Customs House sluice. One turn of the crank and the tide comes in across the counting floor."
+
+on cue LooksAt(Wren, Pell):
+  say Wren: "Pell, the junior tide-waiter, copying manifests in the wrong ink."
+
+on cue TalksTo(Wren, Pell):
+  choice "Do you think a month can be borrowed, Pell?":
+    say Pell: "Only if you pay it back with interest. Ask anyone in this building."
+    remember PellBelief(Wren, 1)
+  choice "Are you afraid of the autumn gale?":
+    say Pell: "My gran says Brackwater floods when it's owed a flood."
+
+on cue LooksAt(Wren, HesterQuill):
+  say Wren: "Hester Quill, who keeps the storm almanac. She was the harbour's tide-reckoner once, and now she watches an empty post box."
+
+on cue LooksAt(Wren, CotMark):
+  say Wren: "Where my cot stood before the weathercock came through the roof."
+
+on cue LooksAt(Wren, DeskMark):
+  say Wren: "The boards by my desk and the shelf of ledgers."
+
+on cue LooksAt(Wren, AtticStairs):
+  say Wren: "The stairs down to the street and the Customs House."
+
+on cue LooksAt(Wren, LedgerMark):
+  say Wren: "Shelves of bound ledgers, every cargo since the old charter."
+
+on cue LooksAt(Wren, CountingFloor):
+  say Wren: "The counting floor, where the clerks weigh the duty."
+
+on cue LooksAt(Wren, SluiceMark):
+  say Wren: "The low corner where the sluice lets the harbour in."
+
+on cue LooksAt(Wren, HillCrest):
+  say Wren: "The crest of Beacon Hill, with all of Brackwater below."
+
+on cue LooksAt(Wren, PostBoxMark):
+  say Wren: "Hester Quill's rusted post box on its leaning pole."
+
+on cue LooksAt(Wren, WhirlMark):
+  say Wren: "The middle of the whirl, where the fog turns on itself."
+
+on cue LooksAt(Wren, Wren):
+  say Wren: "Wren Halloway. Apprentice clerk, light sleeper, and somehow in charge of a month."
+
+on cue LooksAt(Wren, Crank):
+  say Wren: "The sluice crank, hung on its hook by the door. Ashe says the sluice must be opened."
+
+on cue LooksAt(Wren, Note):
+  say Wren: "A sealed note addressed to Hester Quill. On the back: 'Fair weather, falling glass.'"
+
+on cue LooksAt(Wren, FogWhirlProp):
+  say Wren: "A whirl of grey fog turning slowly over the crest. Ashe says what fell must go back in here."
+
+on cue LooksAt(Wren, NoteProp):
+  say Wren: "A sealed note addressed to Hester Quill. On the back: 'Fair weather, falling glass.'"
+
+on cue TalksTo(Wren, HesterQuill):
+  choice "I have a note for you, Miss Quill. It says 'Fair weather, falling glass.'":
+    if not Carries(Wren, Note):
+      say Wren: "I left it in the post box."
+    if Carries(Wren, Note):
+      forget Carries(Wren, Note)
+      say HesterQuill: "Fair weather, falling glass. I wrote that in the almanac forty years ago, and nobody ever read it back to me."
+      say HesterQuill: "Take what fell to the whirl at the crest before the month closes, child."
+      remember NoteDelivered(Wren, HesterQuill)
+  choice "What happens when the borrowed month ends?":
+    say HesterQuill: "It folds back into the real one, or it tears. The loop must close."
+
+when SluiceOpened(Wren, SluiceProp):
+  interrupt Wren with:
+    say Wren: "The sluice gives way! The tide pours across the counting floor and the Customs House shuts its doors!"
+
+when ConvergenceReady(Wren, 1):
+  interrupt Wren with:
+    say Wren: "The weathercock sits in the whirl. The loop is ready to close!"
+
+on cue LooksAt(Wren, Weathercock):
+  say Wren: "The copper weathercock off the Customs House roof, bent and dripping. The Customs House still has its own."
+
+on cue LooksAt(Wren, Sluice):
+  say Wren: "The Customs House sluice. One turn of the crank and the tide comes in across the counting floor."
+
+on cue LooksAt(Wren, FogWhirl):
+  say Wren: "A whirl of grey fog turning slowly over the crest. Ashe says what fell must go back in here."
+
+on cue Takes(Wren, CrankProp):
+  if not Carries(Wren, Crank):
+    remember Carries(Wren, Crank)
+    say Wren: "I'll take the crank."
+
+on cue Uses(Wren, CrankProp):
+  if not Carries(Wren, Crank):
+    remember Carries(Wren, Crank)
+    say Wren: "I'll take the crank."
+
+on cue Takes(Wren, NoteProp):
+  if not Carries(Wren, Note):
+    remember Carries(Wren, Note)
+    say Wren: "A note for Hester Quill. I'll take it up the hill."
+
+on cue Uses(Wren, NoteProp):
+  if not Carries(Wren, Note):
+    remember Carries(Wren, Note)
+    say Wren: "A note for Hester Quill. I'll take it up the hill."
+
+on cue Takes(Wren, WeathercockProp):
+  if not Carries(Wren, Weathercock):
+    remember Carries(Wren, Weathercock)
+    say Wren: "Heavy, and colder than copper should be. It has to go back."
+
+on cue Uses(Wren, WeathercockProp):
+  if not Carries(Wren, Weathercock):
+    remember Carries(Wren, Weathercock)
+    say Wren: "Heavy, and colder than copper should be. It has to go back."
+
+on cue Uses(Wren, Crank, SluiceProp):
+  remember SluiceOpened(Wren, SluiceProp)
+  remember CustomsFlooded(Wren, 1)
+
+on cue Uses(Wren, Note, HesterQuill):
+  forget Carries(Wren, Note)
+  say HesterQuill: "Fair weather, falling glass. I wrote that in the almanac forty years ago, and nobody ever read it back to me."
+  say HesterQuill: "Take what fell to the whirl at the crest before the month closes, child."
+  remember NoteDelivered(Wren, HesterQuill)
+
+on cue Uses(Wren, Weathercock, FogWhirlProp):
+  forget Carries(Wren, Weathercock)
+  remember KeystoneAtConvergence(Wren, WeathercockProp)
+  remember ConvergenceReady(Wren, 1)
+
+on cue LooksAt(Wren):
+  say Wren: "Nothing unusual to see here."

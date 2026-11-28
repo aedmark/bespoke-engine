@@ -12,50 +12,7 @@ const art = @import("art.zig");
 const host = bespoke.host;
 const container = bespoke.container;
 
-pub const GROG_PUZZLE_SCRIPT =
-    \\scene: Saltglass Stockade
-    \\cast: Mara, Ivo
-    \\props: GrogBarrel, CupA, CupB, CupC, CellLock
-    \\marks: BarrelMark, GalleryOne, GalleryTwo, LockMark
-    \\
-    \\relation Carries(holder, item)
-    \\
-    \\remember Carries(Mara, CupA)
-    \\remember Carries(Mara, CupB)
-    \\remember Carries(Mara, CupC)
-    \\Ivo is imprisoned
-    \\
-    \\degradation CausticGrogCups:
-    \\  substance CausticGrog
-    \\  stage GrogSound 4
-    \\  stage Pitted 3
-    \\  stage Buckling 2
-    \\  stage GrogFailed 0
-    \\  vessel CupA 10 10 GrogSound
-    \\  vessel CupB 10 0 GrogSound
-    \\  vessel CupC 10 0 GrogSound
-    \\  spill 1
-    \\
-    \\on cue LooksAt(Mara, GrogBarrel):
-    \\  say Mara: "The dockmaster's grog is strong enough to etch iron. The cups are less fortunate."
-    \\
-    \\on cue LooksAt(Mara, CellLock):
-    \\  if CellLock is dissolved:
-    \\    say Ivo: "The lock is gone. I owe you a drink that stays in its cup."
-    \\  if CellLock is not dissolved:
-    \\    say Ivo: "Four measures should reach the tumblers. Hurry before the cups surrender."
-    \\
-    \\on cue Pours(Mara, CupA, CupB):
-    \\  say Mara: "Cup A hisses. I throw the grog into Cup B without losing a drop."
-    \\
-    \\on cue Pours(Mara, CupB, CupC):
-    \\  say Mara: "Cup B starts to pit. Cup C gets the whole burning measure."
-    \\
-    \\on cue Dissolves(Mara, CellLock):
-    \\  CellLock is dissolved
-    \\  Ivo is not imprisoned
-    \\  say Ivo: "The grog bites through the lock. Salt air at last!"
-;
+pub const GROG_PUZZLE_SCRIPT = @embedFile("scripts/grog_puzzle.bespoke");
 
 const Ids = struct {
     scene: bespoke.EntityId,

@@ -1,0 +1,154 @@
+scene: Greyhold Store
+cast: Valerius, Hesper, Brann, Tam
+props: Loaf
+marks: StoreDoor, Aisle, Counter, Chimney
+
+scene: Greyhold Gate
+marks: Gatehouse, Wall, Road
+
+relation Carries(holder, item)
+relation Knows(who, what)
+relation Caught(who)
+relation Robbed(what)
+relation Hearing(who)
+relation Offered(what)
+relation Sentenced(who)
+relation Repaid(who)
+relation Fed(who)
+relation Guarded(who)
+relation Recruit(who)
+relation Settled(who)
+
+axis Justice between Cruelty and Leniency
+axis Mercy between Vengeance and "Condoning Harm"
+axis Loyalty between Servility and Treachery
+
+remember Justice(Valerius, 4)
+remember Mercy(Valerius, 3)
+remember Loyalty(Valerius, 6)
+remember Carries(Hesper, Purse)
+remember Caught(Tam)
+remember Robbed(Store)
+remember Knows(Hesper, Valerius)
+remember Knows(Valerius, Hang)
+remember Knows(Valerius, HearTheCase)
+remember Knows(Valerius, TakeTheCoin)
+remember Knows(Valerius, RefuseTheCoin)
+
+red lines Valerius: Hang, TakeTheCoin
+
+decision BrannsCounsel:
+  actor Valerius
+  fires Counselled
+  requires Caught(Tam)
+  option Hang:
+    picks 9 when Robbed(Store)
+  option HearTheCase:
+    picks 1 when Caught(Tam)
+
+decision HespersPurse:
+  actor Valerius
+  fires PurseOffered
+  requires Offered(Purse)
+  option TakeTheCoin:
+    picks 9 when Robbed(Store)
+  option RefuseTheCoin:
+    picks 1 when Offered(Purse)
+
+dilemma StolenLoaf:
+  actor Valerius
+  fires Judged
+  requires Hearing(Tam)
+  weighs Justice against Mercy
+  appeals 4 to Mercy
+  appeals 8 to Loyalty toward Mercy
+  drifts 5 toward Mercy when Repaid(Tam)
+  drifts 10 toward Mercy when Fed(LowerTown)
+  strong Justice: "Twenty lashes in the yard, and the town will watch." -> Flog
+  moderate Justice: "A week in the cells, and his sister pays for the loaf." -> Cells
+  neutral: "Give me a reason, Hesper. The law, or the boy?" -> Weigh
+  moderate Mercy: "Then he works the kitchens until the loaf is paid." -> Pardon
+  strong Mercy: "My men went hungry too. Open the store to the lower town, and the boy guards the door." -> OpenStore
+
+dilemma TheRecruit:
+  actor Valerius
+  fires Answered
+  requires Recruit(Tam)
+  weighs Mercy against Justice
+  leans 3 toward Mercy when Repaid(Tam)
+  leans 6 toward Mercy when Guarded(Tam)
+  strong Mercy: "Greyhold owes you a loaf and a spear. Welcome to the wall." -> Enlist
+  moderate Mercy: "You stand the night watch, where I can see you." -> Probation
+  neutral: "Hesper, will you vouch for him?" -> Hesitate
+  moderate Justice: "A thief does not hold my gate." -> Refuse
+  strong Justice: "Leave Greyhold before dark." -> Banish
+
+command Waits: "wait for spring"
+
+on cue Counselled(Valerius, HearTheCase):
+  say Brann: "He took bread from the garrison store, Captain. Hang him, and no one tries it again."
+  say Valerius: "Put the rope away, Sergeant. He is a child, and I will hear it."
+  remember Hearing(Tam)
+
+on cue LooksAt(Hesper, Loaf):
+  say Hesper: "One grey loaf. Tam had not eaten in three days."
+
+on cue TalksTo(Hesper, Tam):
+  say Tam: "I only took the one loaf, Hes."
+
+on cue TalksTo(Hesper, Brann):
+  say Brann: "The captain decides. I only caught him."
+
+on cue TalksTo(Hesper, Valerius, Mercy):
+  say Valerius: "I was a hungry boy in a hard winter once. Someone fed me."
+  remember Knows(Hesper, "Mercy of Valerius")
+
+on cue TalksTo(Hesper, Valerius, Loyalty):
+  say Valerius: "Every man on this wall eats before I do. So does the town below it, when I can manage it."
+  remember Knows(Hesper, "Loyalty of Valerius")
+
+on cue TalksTo(Hesper, Valerius, Justice):
+  say Valerius: "The store feeds the garrison. A theft from it is a theft from every man here."
+  remember Knows(Hesper, "Justice of Valerius")
+
+on cue Presents(Hesper, Valerius, Purse):
+  say Hesper: "Take my purse for the loaf, Captain, and let him go."
+  remember Offered(Purse)
+
+on cue PurseOffered(Valerius, RefuseTheCoin):
+  say Valerius: "Put your coin away. Greyhold's captain is not for sale."
+  forget Offered(Purse)
+
+on cue Appeals(Hesper, Valerius, Mercy):
+  say Hesper: "He is hungry, Captain. You know what that is."
+
+on cue Appeals(Hesper, Valerius, Loyalty):
+  say Hesper: "The lower town feeds this fort in summer. It is starving now, and so are your men."
+
+on cue Judged(Valerius, Pardon):
+  say Tam: "I'll scrub every pot in Greyhold."
+  remember Repaid(Tam)
+  remember Sentenced(Tam)
+
+on cue Judged(Valerius, OpenStore):
+  say Brann: "The store is open, Captain. The lower town eats tonight."
+  remember Fed(LowerTown)
+  remember Guarded(Tam)
+  remember Sentenced(Tam)
+
+on cue Waits(Hesper):
+  if Sentenced(Tam):
+    say Hesper: "The snow goes. In spring, Tam walks back up the hill to the gate."
+    forget Hearing(Tam)
+    transition to scene: Greyhold Gate
+    remember Recruit(Tam)
+  if not Sentenced(Tam):
+    say Hesper: "Not while Tam's fate is still open."
+
+on cue Answered(Valerius, Enlist):
+  say Tam: "I won't let the store go hungry again."
+  remember Settled(Tam)
+
+on cue Answered(Valerius, Probation):
+  say Tam: "I'll earn the day watch, Captain."
+  remember Settled(Tam)
