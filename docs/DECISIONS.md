@@ -2691,6 +2691,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** an indented block of phrases, not chosen; a comma list may not continue onto the next line, since the indented line reads as a block.
 
+## D-211 New Projects, New Scripts, and Script Text in the Studio (2026-11-28, status: accepted; P47-16, P47-17)
+
+**Context.** The Studio could only open an existing folder, and its script window only showed text. An author starting from nothing needed `bespoke init` and a text editor outside the Studio. Found during the maintainer's hand test; the maintainer chose on 2026-11-28.
+
+**Decision.**
+1. **New project** writes `bespoke init`'s starter script, stage or text (chosen in a requester), as `scripts/main.bespoke` into an empty folder the author picks, saves it at once, and opens it. A folder holding anything but hidden entries is refused. No `build.zig`, tests, or page: a folder the Studio edits, which `bespoke check` and `bespoke run` also accept. Without folder access the project lives in the page and Save offers the script as a download. The starters are built into the page from `src/scaffold/` by `tools/build_studio.py`, so they stay one source.
+2. **Script text.** A script window has Edit, which shows the file in a plain text area with the browser's own cursor, selection, clipboard, and undo. Apply checks the project with the new text and keeps it only if it compiles; a refusal names the line, moves the caret there, and keeps what was typed. The file keeps its byte-order mark and line endings. Save writes it like any other edit.
+3. **New script** creates `<name>.bespoke` beside the main script and adds `include "<name>.bespoke"` to the main script, after its last include or after its opening comment lines; both are checked together, and a refusal keeps neither. The new script opens for editing.
+
+**Consequences.** An author can start, write, play, and export a game without leaving the Studio. The starter's opening comment still says to run `zig build`, which only a full `bespoke init` project can. Every other editor lists the project again after a text edit. Pinned by step 17 of `tools/studio_smoke.js`.
+
+**Alternatives:** writing the full `bespoke init` tree, rejected because the page cannot know where the engine is and the build files would need a pinned release; a Studio-drawn text editor, rejected as much more work for the same edits; keeping text that does not compile, rejected so the other editors always read a project that checks.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

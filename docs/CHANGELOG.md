@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio starts projects and edits text (`P47-16`, `P47-17`, `D-211`): New project writes `bespoke init`'s stage or text starter into an empty folder and opens it; a script window's Edit shows its text in a text area, and Apply keeps it only if the project still compiles; New script adds a script and its `include` line.
+
 - Several phrases on one command line (`P49-05`, `D-210`): `command GoesNorth: "north", "n"`. A script may declare 51 phrases, as before, and `limit commands N` raises that up to 408; a phrase past the limit is now a compile error instead of a frame silently dropped.
 
 - Typed commands find things where the script put them (`P49-04`, `D-209`): an `At(thing, room)` fact puts a thing in that room's scope, and a prop someone carries, or that `At` facts place only elsewhere, is no longer named in the room its scene listed. A parser game can now drop a thing in one room and pick it up in another.

@@ -457,8 +457,11 @@
   // The game's name for its page, in the form `bespoke init` and the packer take: a lower-case
   // letter, then up to 31 letters, digits, or underscores. From the folder, else the script.
   function gameName() {
-    const from = S.project.handle ? S.project.name : S.project.main.split('/').pop().replace(/\.bespoke$/i, '');
-    let n = from.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^[^a-z]+/, '').slice(0, 32).replace(/_+$/, '');
+    return nameFor(S.project.handle ? S.project.name : S.project.main.split('/').pop().replace(/\.bespoke$/i, ''));
+  }
+
+  function nameFor(from) {
+    const n = from.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^[^a-z]+/, '').slice(0, 32).replace(/_+$/, '');
     return n || 'game';
   }
 
@@ -1089,27 +1092,96 @@
 
   // A read-only view of one project file with the diagnostic's line marked and a caret under
   // its column. The text is decoded for display only; the bytes the project holds never change.
-  function openScript(path, lineNo, column) {
+  // ------------------------------------------------------------ scripts as text (P47-17, D-211)
+
+  function textOf(bytes) {
+    const t = new TextDecoder('utf-8').decode(bytes);
+    return t.charCodeAt(0) === 0xfeff ? t.slice(1) : t;
+  }
+
+  // Text from the editor back to bytes in the file's own form: its byte-order mark and its
+  // line endings (CRLF when it used them), so an edit changes only the lines it touched.
+  function bytesLike(old, text) {
+    const bom = old.length >= 3 && old[0] === 0xef && old[1] === 0xbb && old[2] === 0xbf;
+    let t = text.replace(/\r\n|\r/g, '\n');
+    if (/\r\n/.test(textOf(old))) t = t.replace(/\n/g, '\r\n');
+    const body = enc.encode(t);
+    if (!bom) return body;
+    const out = new Uint8Array(body.length + 3);
+    out.set([0xef, 0xbb, 0xbf]);
+    out.set(body, 3);
+    return out;
+  }
+
+  // The other editors list what the module holds; after a text edit they list it again.
+  async function relistEditors() {
+    await painter.relist();
+    await roomer.relist();
+    await caster.relist();
+    await dilemmer.relist();
+    await talker.relist();
+  }
+
+  // Keeps `text` as the file at `path` only if the project still compiles with it (D-211):
+  // the module checks the main script with the new bytes, and a refusal puts the old bytes
+  // back. Returns { written } or { written: false, result } with the compiler's report.
+  async function applyText(path, text) {
+    const f = findFile(path);
+    if (!f) return { written: false, refused: `${path} is not in the opened project.` };
+    const old = f.bytes;
+    const bytes = bytesLike(old, text);
+    if (sameBytes(bytes, old)) return { written: true, same: true };
+    painterFileChanged(path, bytes);
+    const r = runCheck(S.project.main);
+    if (!r || !r.valid) {
+      painterFileChanged(path, old);
+      return { written: false, result: r };
+    }
+    S.result = r;
+    renderProject();
+    renderDiagnostics(r.warnings.length > 0);
+    await relistEditors();
+    return { written: true, result: r };
+  }
+
+  // A script in a window: read-only lines with a marked line, or, after Edit, a text area.
+  // `opts.edit` opens straight into the text area.
+  function openScript(path, lineNo, column, opts = {}) {
     const f = findFile(path);
     if (!f) { desk.requester(projectWindow(), { title: 'Show line', lines: [`${path} is not in the opened project.`] }); return null; }
     const id = `script:${path}`;
     let win = screen.windows.find((w) => w.id === id);
     if (!win) {
-      let text = new TextDecoder('utf-8').decode(f.bytes);
-      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-      const lines = text.split(/\r\n|\n|\r/).map((l) => l.replace(/\t/g, '  '));
       const a = screen.area.getBoundingClientRect();
+      const state = { bytes: null, lines: [], mark: lineNo, column, top: 0, editing: false, error: '' };
+      const bar = document.createElement('div');
+      bar.className = 'row';
       const view = document.createElement('div');
       view.className = 'view';
       const rows = document.createElement('div');
       rows.className = 'rows';
-      const state = { lines, mark: lineNo, column, top: 0 };
       const prop = desk.propGadget((top) => { state.top = top; draw(); });
       view.append(rows, prop.el);
+      const area = document.createElement('textarea');
+      area.className = 'strgad script-text';
+      area.spellcheck = false;
+      area.autocomplete = 'off';
+      area.setAttribute('aria-label', `Text of ${path}`);
+      area.onkeydown = (e) => e.stopPropagation();
+      const note = document.createElement('div');
+      function current() {
+        const file = findFile(path);
+        if (file && file.bytes !== state.bytes) {
+          state.bytes = file.bytes;
+          state.lines = textOf(file.bytes).split(/\r\n|\n|\r/).map((l) => l.replace(/\t/g, '  '));
+        }
+        return file;
+      }
       function visible() {
         return Math.max(1, Math.floor(rows.getBoundingClientRect().height / (9 * desk.px())));
       }
       function draw() {
+        current();
         const vis = visible();
         const width = String(state.lines.length).length;
         const out = [];
@@ -1124,21 +1196,216 @@
         rows.replaceChildren(...out);
         prop.set(state.lines.length + (state.mark ? 1 : 0), vis, state.top);
       }
+      function layout() {
+        const pairs = state.editing ? [['script-apply', 'Apply'], ['script-cancel', 'Cancel']] : [['script-edit', 'Edit']];
+        bar.replaceChildren(...pairs.map(([gid, text]) => desk.button(win, gid, text)));
+        note.replaceChildren(...(state.error ? [line(fit(state.error, 80), 'err')] : []));
+        win.body.replaceChildren(bar, note, state.editing ? area : view);
+        if (!state.editing) draw();
+      }
+      // Puts the caret at the start of a line in the text area.
+      function caretTo(no) {
+        const text = area.value;
+        let at = 0;
+        for (let k = 1; k < no && at >= 0; k += 1) at = text.indexOf('\n', at) + (at === -1 ? 0 : 1);
+        area.focus();
+        area.setSelectionRange(Math.max(0, at), Math.max(0, at));
+      }
+      function edit() {
+        const file = current();
+        if (!file) return;
+        area.value = textOf(file.bytes);
+        state.editing = true;
+        state.error = '';
+        layout();
+        caretTo(state.mark || 1);
+      }
+      async function apply() {
+        const r = await applyText(path, area.value);
+        if (r.written) {
+          state.editing = false;
+          state.error = '';
+          layout();
+          return;
+        }
+        const res = r.result;
+        state.error = r.refused || (res ? (res.line ? `Not kept: ${res.file}, line ${res.line}: ${res.message}` : `Not kept: ${res.message}`) : 'Not kept: the compiler is not running.');
+        layout();
+        if (res && res.line && res.file === path) caretTo(res.line);
+      }
       rows.addEventListener('wheel', (e) => { e.preventDefault(); prop.moveTo(state.top + Math.sign(e.deltaY) * 3); }, { passive: false });
       win = desk.window(screen, {
-        id, title: path, x: Math.min(120, a.width * 0.1), y: 90, w: Math.min(640, a.width), h: Math.min(320, a.height - 90), minW: 160, minH: 90,
-        onMessage: (msg) => {
-          if (msg.kind === 'close') win.close();
-          if (msg.kind === 'resize') draw();
-          if (msg.kind === 'goto') { state.mark = msg.line; state.column = msg.column; state.top = Math.max(0, msg.line - 1 - Math.floor(visible() / 2)); draw(); }
+        id, title: path, x: Math.min(120, a.width * 0.1), y: 90, w: Math.min(640, a.width), h: Math.min(360, a.height - 90), minW: 160, minH: 110,
+        onMessage: async (msg) => {
+          if (msg.kind === 'close') {
+            if (state.editing && area.value !== textOf(current().bytes)) {
+              const pick = await desk.requester(win, { title: path, lines: ['The text has changes that were not applied.', 'Close and lose them?'], buttons: [{ id: 'lose', label: 'Lose them' }, { id: 'cancel', label: 'Cancel' }] });
+              if (pick !== 'lose') return;
+            }
+            win.close();
+          }
+          if (msg.kind === 'resize' && !state.editing) draw();
+          if (msg.kind === 'goto') {
+            state.mark = msg.line;
+            state.column = msg.column;
+            state.top = Math.max(0, msg.line - 1 - Math.floor(visible() / 2));
+            if (state.editing) caretTo(msg.line); else draw();
+          }
+          if (msg.kind === 'gadget') {
+            if (msg.id === 'script-edit') edit();
+            if (msg.id === 'script-cancel') { state.editing = false; state.error = ''; layout(); }
+            if (msg.id === 'script-apply') await apply();
+          }
         },
       });
-      win.body.appendChild(view);
+      win.scriptText = (text) => { area.value = text; return true; };
+      win.scriptState = () => ({ editing: state.editing, error: state.error, text: state.editing ? area.value : null });
+      layout();
     }
     win.toFront();
     win.activate();
-    win.port.post({ kind: 'goto', line: lineNo, column });
+    win.port.post({ kind: 'goto', line: lineNo || 1, column: column || 0 });
+    if (opts.edit) win.port.post({ kind: 'gadget', id: 'script-edit' });
     return win;
+  }
+
+  // ------------------------------------------------------------ new projects and scripts (P47-16, D-211)
+
+  // A one-line question in its own small window; resolves to the text, or null on Cancel.
+  function askText(title, label, value) {
+    return new Promise((resolve) => {
+      const a = screen.area.getBoundingClientRect();
+      let done = false;
+      const input = document.createElement('input');
+      const w = desk.window(screen, {
+        id: `ask:${title}`, title, x: Math.max(0, (a.width - 340) / 2), y: 120, w: Math.min(340, a.width), h: 130, minW: 200, minH: 100,
+        onMessage: (msg) => {
+          if (msg.kind === 'close') finish(null);
+          if (msg.kind === 'gadget') finish(msg.id === 'ask-ok' ? input.value : null);
+        },
+      });
+      function finish(v) {
+        if (done) return;
+        done = true;
+        w.close();
+        resolve(v);
+      }
+      input.className = 'strgad';
+      input.value = value;
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      input.setAttribute('aria-label', label);
+      input.onkeydown = (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(input.value);
+        if (e.key === 'Escape') finish(null);
+      };
+      const row = document.createElement('label');
+      row.className = 'line field';
+      row.append(desk.label(label), input);
+      w.body.append(row, buttons(w, [['ask-ok', 'OK'], ['ask-cancel', 'Cancel']]));
+      w.toFront();
+      w.activate();
+      input.focus();
+      input.select();
+    });
+  }
+
+  // A new project (D-211): `bespoke init`'s starter script, stage or text, written as
+  // scripts/main.bespoke into an empty folder the author picks, then opened. Without folder
+  // access the project lives in the page and Save offers the script as a download.
+  // `opts.kind` and `opts.handle` skip the questions, for tests.
+  async function newProject(opts = {}) {
+    if (!await confirmDiscard()) return false;
+    const win = projectWindow();
+    let kind = opts.kind;
+    if (!kind) {
+      kind = await desk.requester(win, {
+        title: 'New project',
+        lines: ['A starter game to build on, in a folder of its own.', 'Stage: drawn, and played by pointer.', 'Text: typed commands, with a picture.'],
+        buttons: [{ id: 'stage', label: 'Stage' }, { id: 'text', label: 'Text' }, { id: 'cancel', label: 'Cancel' }],
+      });
+      if (kind !== 'stage' && kind !== 'text') return false;
+    }
+    let handle = opts.handle || null;
+    if (!handle && window.showDirectoryPicker && !opts.inPage) {
+      try { handle = await window.showDirectoryPicker({ id: 'bespoke-new', mode: 'readwrite' }); } catch (err) {
+        if (err && err.name === 'AbortError') return false;
+        throw err;
+      }
+    }
+    if (handle) {
+      for await (const entry of handle.values()) {
+        if (entry.name.startsWith('.')) continue;
+        await desk.requester(win, { title: 'New project', lines: [`"${handle.name}" is not empty.`, 'Choose an empty folder, or make a new one in the folder picker.'] });
+        return false;
+      }
+    }
+    const name = nameFor(handle ? handle.name : 'new_game');
+    const bytes = enc.encode(STUDIO_BUILD.starters[kind].split('{{name}}').join(name));
+    const file = { path: 'scripts/main.bespoke', bytes, original: null, base: bytes, dirty: true, handle: null, isNew: true };
+    const opened = await finishOpen({ name: handle ? handle.name : name, handle, writable: Boolean(handle) }, { files: [file], skipped: [], total: bytes.length });
+    if (!opened) return false;
+    // The starter is written at once, so the folder is a project from the first moment.
+    if (handle) await save();
+    return true;
+  }
+
+  // A new script beside the main script, with its `include` line in the main script (D-211),
+  // both checked together; refused, neither is kept. Opens the new script for editing.
+  async function newScript(opts = {}) {
+    if (!await readyToBuild('New script', () => newScript(opts))) return null;
+    const win = projectWindow();
+    const asked = opts.name !== undefined ? opts.name : await askText('New script', 'Name', 'more');
+    if (asked === null) return null;
+    const name = asked.trim().replace(/\.bespoke$/i, '');
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(name)) {
+      await desk.requester(win, { title: 'New script', lines: [`"${name}" can't name a script.`, 'Use a letter, then up to 31 letters, digits, hyphens, or underscores.'] });
+      return null;
+    }
+    const main = S.project.main;
+    const dir = main.includes('/') ? main.slice(0, main.lastIndexOf('/') + 1) : '';
+    const path = `${dir}${name}.bespoke`;
+    if (findFile(path)) {
+      await desk.requester(win, { title: 'New script', lines: [`${path} is already in the project.`] });
+      return null;
+    }
+    const mf = findFile(main);
+    const oldMain = mf.bytes;
+    const lines = textOf(oldMain).split(/\r\n|\n|\r/);
+    // After the last include; with none, after the comment lines that open the script.
+    let at = -1;
+    lines.forEach((l, i) => { if (/^include\s/.test(l)) at = i + 1; });
+    const fresh = at < 0;
+    if (fresh) {
+      at = 0;
+      while (at < lines.length && lines[at].startsWith('#')) at += 1;
+    }
+    const insert = [`include "${name}.bespoke"`];
+    if (fresh && at < lines.length && lines[at].trim() !== '') insert.push('');
+    lines.splice(at, 0, ...insert);
+    const newMain = bytesLike(oldMain, lines.join('\n'));
+    const body = enc.encode(`# ${name}: included by ${main.split('/').pop()}.\n`);
+    S.project.files.push({ path, bytes: body, original: null, base: body, dirty: true, handle: null, isNew: true });
+    S.project.files.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+    mf.bytes = newMain;
+    mf.dirty = !sameBytes(newMain, mf.original);
+    if (loadIntoCompiler() === null) return null;
+    const r = runCheck(main);
+    if (!r || !r.valid) {
+      S.project.files = S.project.files.filter((f) => f.path !== path);
+      mf.bytes = oldMain;
+      mf.dirty = !sameBytes(oldMain, mf.original);
+      loadIntoCompiler();
+      renderProject();
+      if (r) await showResult(r);
+      return null;
+    }
+    S.result = r;
+    renderProject();
+    await relistEditors();
+    openScript(path, 1, 0, { edit: true });
+    return { path, line: at + 1 };
   }
 
   // Held menus need a secondary mouse button; where the Menus gadget shows instead (touch, or a
@@ -1162,7 +1429,7 @@
     const n = cols(aboutWin);
     const lines = [
       `BeSpoke Studio ${STUDIO_BUILD.version}`,
-      'Open a project folder to check its scripts, Play to run the game, Art to paint its PNGs, Rooms to lay out its scenes, and Cast to name its people and values.',
+      'Start a New project or open a project folder to check its scripts, Play to run the game, Art to paint its PNGs, Rooms to lay out its scenes, and Cast to name its people and values. A script window edits its text.',
       menuHint(),
       'Drag the screen down by its title bar.',
     ];
@@ -1189,8 +1456,10 @@
       {
         title: 'Project',
         items: [
+          { id: 'new-project', label: 'New project...' },
           { id: 'open-folder', label: 'Open folder...', key: 'O' },
           { id: 'open-files', label: 'Open files...' },
+          { id: 'new-script', label: 'New script...' },
           { id: 'check', label: 'Check script', key: 'K' },
           { id: 'play', label: 'Play game', key: 'G' },
           { id: 'export', label: 'Export page...', key: 'E' },
@@ -1222,6 +1491,8 @@
 
   async function command(id) {
     switch (id) {
+      case 'new-project': return newProject();
+      case 'new-script': return newScript();
       case 'open-folder': return openFolder();
       case 'open-files': return openFiles();
       case 'check': return check();
@@ -1289,6 +1560,13 @@
     check,
     play,
     exportPage,
+    newProject,
+    newScript,
+    openScript: (path, l, c, opts) => Boolean(openScript(path, l || 1, c || 0, opts)),
+    // For tests: the script window's text area and gadgets.
+    scriptText: (path, text) => { const w = screen.windows.find((x) => x.id === `script:${path}`); return w ? w.scriptText(text) : false; },
+    scriptGadget: (path, gid) => { const w = screen.windows.find((x) => x.id === `script:${path}`); if (!w) return false; w.port.post({ kind: 'gadget', id: gid }); return true; },
+    scriptState: (path) => { const w = screen.windows.find((x) => x.id === `script:${path}`); return w ? w.scriptState() : null; },
     // Hands raw bytes to the play window as if they were a built package, so a test can show
     // that a package the runtime refuses leaves a working Studio.
     playBytes: (bytes) => player.run(Uint8Array.from(bytes)),

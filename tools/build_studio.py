@@ -27,6 +27,8 @@ PLAY_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-play.wasm"
 # source each, so a Studio export matches a page built from a project.
 SHELLS = {"stage": ROOT / "src" / "scaffold" / "index.html.tmpl", "text": ROOT / "src" / "scaffold" / "text_index.html.tmpl"}
 LICENSE = ROOT / "LICENSE"
+# The starter scripts `bespoke init` writes, for New project (P47-16, D-211): one source each.
+STARTERS = {"stage": ROOT / "src" / "scaffold" / "main.bespoke.tmpl", "text": ROOT / "src" / "scaffold" / "text_main.bespoke.tmpl"}
 # The generated loader the packer replaces (tools/pack_game_page.py), before `{{name}}` is filled.
 SHELL_LOADER = "WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {})"
 MARKERS = ("<!--@FONT-->", "<!--@BUILD-->", "<!--@WINDOWS-->", "<!--@PLAY-->", "<!--@PAINT-->", "<!--@ROOM-->", "<!--@CAST-->", "<!--@DILEMMA-->", "<!--@TALK-->", "<!--@APP-->")
@@ -61,6 +63,13 @@ def render(wasm: bytes, play: bytes, font: dict) -> str:
         if text.count("</body>") != 1:
             raise SystemExit(f"{path.relative_to(ROOT)} must hold one closing body tag")
         shells[kind] = text
+    starters = {}
+    for kind, path in STARTERS.items():
+        text = path.read_text(encoding="utf-8")
+        # The Studio fills `{{name}}` only; any other placeholder would reach the author as text.
+        if re.sub(r"\{\{name\}\}", "", text).count("{{"):
+            raise SystemExit(f"{path.relative_to(ROOT)} holds a placeholder other than {{{{name}}}}")
+        starters[kind] = text
     build = {
         "version": version(),
         "wasm": base64.b64encode(wasm).decode("ascii"),
@@ -68,6 +77,7 @@ def render(wasm: bytes, play: bytes, font: dict) -> str:
         "shells": shells,
         "shellLoader": SHELL_LOADER,
         "license": LICENSE.read_text(encoding="utf-8"),
+        "starters": starters,
     }
     parts = {
         "<!--@FONT-->": script("const STUDIO_FONT = " + json.dumps(font, separators=(",", ":"), sort_keys=True) + ";"),

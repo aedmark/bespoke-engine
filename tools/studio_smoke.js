@@ -49,7 +49,11 @@
 //  16. (P47-07, D-207) Export page turns The Sunken Vault into one text page and one stage
 //      page from init's shells, with the packer's license template, under the page budget and
 //      with nothing in the project changed; the text page, opened from disk, takes a typed
-//      turn, and the stage page draws the game.
+//      turn, and the stage page draws the game;
+//  17. (P47-16, P47-17, D-211) New project writes init's starter into an empty folder (and
+//      refuses one that is not empty), the script window edits text, keeping an edit only when
+//      the project compiles and keeping the file's line endings, and New script adds a file
+//      and its include line; Save writes exactly those bytes, and the command line checks them.
 'use strict';
 
 const fs = require('fs');
@@ -1037,6 +1041,79 @@ async function run(pageUrl) {
     } finally {
       fs.rmSync(exportDir, { recursive: true, force: true });
     }
+
+    // 17. New project, text editing, and New script.
+    // The export step left the tab on an exported page; the Studio loads again.
+    await load('new project');
+    const starter = (kind) => fs.readFileSync(path.join(root, 'src', 'scaffold', kind === 'text' ? 'text_main.bespoke.tmpl' : 'main.bespoke.tmpl'), 'utf8').split('{{name}}').join('project');
+    await evaluate(WRITE_FIXTURE({ 'notes.txt': b64('not empty') }));
+    await evaluate(`${PROJECT_DIR}.then((d) => { window.__np = window.bespokeStudio.newProject({ kind: 'stage', handle: d }); return true; })`);
+    await requester('New project');
+    await click('.req-buttons .gad');
+    await noRequester();
+    if (await evaluate('window.__np')) throw new Error('New project wrote into a folder that was not empty');
+    for (const kind of ['text', 'stage']) {
+      await evaluate(WRITE_FIXTURE({}));
+      await evaluate(`${PROJECT_DIR}.then((d) => { window.__np = window.bespokeStudio.newProject({ kind: '${kind}', handle: d }); return true; })`);
+      await requester('Save');
+      await click('.req-buttons .gad');
+      await noRequester();
+      if (!await evaluate('window.__np')) throw new Error(`New project (${kind}) did not open`);
+      const made = await evaluate(SNAPSHOT);
+      const names = Object.keys(made);
+      if (names.length !== 1 || names[0] !== 'scripts/main.bespoke') throw new Error(`New project (${kind}) wrote ${names.join(', ')}`);
+      if (Buffer.from(made['scripts/main.bespoke'].b64, 'base64').toString('utf8') !== starter(kind)) throw new Error(`New project (${kind}) did not write init's starter`);
+      const st = await state();
+      if (!st.result || !st.result.valid || st.project.files.some((f) => f.dirty)) throw new Error(`New project (${kind}): ${JSON.stringify(st.result)}`);
+    }
+    // Text editing keeps a file's CRLF line endings and refuses an edit that does not compile.
+    const EDIT_SRC = 'scene Yard:\r\n  cast: Hero\r\n  marks: Gate\r\n\r\nroutine Greet(Hero):\r\n  say Hero: "Hello."\r\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(EDIT_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate("window.bespokeStudio.openScript('main.bespoke', 6, 0, { edit: true })");
+    const sstate = () => evaluate("window.bespokeStudio.scriptState('main.bespoke')");
+    await waitFor('the text area', async () => ((await sstate() || {}).editing ? true : null));
+    const typed = (await sstate()).text;
+    if (typed !== EDIT_SRC.replace(/\r\n/g, '\n')) throw new Error(`the text area holds ${JSON.stringify(typed)}`);
+    await evaluate(`window.bespokeStudio.scriptText('main.bespoke', ${JSON.stringify(typed.replace('say Hero: "Hello."', 'say Hero "Hello."'))})`);
+    await evaluate("window.bespokeStudio.scriptGadget('main.bespoke', 'script-apply')");
+    const refused = await waitFor('a refused edit', async () => { const t = await sstate(); return t && t.error ? t : null; });
+    if (!refused.editing || !/line 6/.test(refused.error) || (await state()).project.files[0].dirty) throw new Error(`refused edit: ${JSON.stringify(refused)}`);
+    await evaluate(`window.bespokeStudio.scriptText('main.bespoke', ${JSON.stringify(typed.replace('"Hello."', '"Hello, yard."'))})`);
+    await evaluate("window.bespokeStudio.scriptGadget('main.bespoke', 'script-apply')");
+    await waitFor('the edit kept', async () => { const t = await sstate(); return t && !t.editing ? true : null; });
+    if (!(await state()).project.files[0].dirty) throw new Error('the kept edit is not waiting for Save');
+    // New script: the file and its include line, checked together; then an edit in it.
+    const newOne = await evaluate("window.bespokeStudio.newScript({ name: 'rooms' })");
+    if (!newOne || newOne.path !== 'rooms.bespoke' || newOne.line !== 1) throw new Error(`New script: ${JSON.stringify(newOne)}`);
+    await waitFor('the new script open for editing', async () => ((await evaluate("window.bespokeStudio.scriptState('rooms.bespoke')")) || {}).editing ? true : null);
+    await evaluate(`window.bespokeStudio.scriptText('rooms.bespoke', ${JSON.stringify('# rooms: included by main.bespoke.\nrelation Rested(who)\n')})`);
+    await evaluate("window.bespokeStudio.scriptGadget('rooms.bespoke', 'script-apply')");
+    await waitFor('the new script kept', async () => (!((await evaluate("window.bespokeStudio.scriptState('rooms.bespoke')")) || {}).editing ? true : null));
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const edited = await evaluate(SNAPSHOT);
+    const mainText = Buffer.from(edited['main.bespoke'].b64, 'base64').toString('latin1');
+    const mainWant = 'include "rooms.bespoke"\r\n\r\n' + EDIT_SRC.replace('"Hello."', '"Hello, yard."');
+    if (mainText !== mainWant) throw new Error(`saved main:\n${JSON.stringify(mainText)}\nwanted:\n${JSON.stringify(mainWant)}`);
+    const roomsText = Buffer.from(edited['rooms.bespoke'].b64, 'base64').toString('latin1');
+    if (roomsText !== '# rooms: included by main.bespoke.\nrelation Rested(who)\n') throw new Error(`saved rooms: ${JSON.stringify(roomsText)}`);
+    let textCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-text-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), mainText, 'latin1');
+        fs.writeFileSync(path.join(dir, 'rooms.bespoke'), roomsText, 'latin1');
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['check', path.join(dir, 'main.bespoke')], { encoding: 'utf8' });
+        if (run.status !== 0) throw new Error(`bespoke check on the edited project: ${run.stdout}${run.stderr}`);
+        textCli = 'bespoke check passes on the saved files';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  new project and text: a non-empty folder refused, init's stage and text starters written and valid, an edit refused at line 6 and one kept with CRLF, New script added rooms.bespoke and its include; ${textCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

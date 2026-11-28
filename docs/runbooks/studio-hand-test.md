@@ -4,7 +4,7 @@ A hand test of BeSpoke Studio (`site/studio.html`, Phase 47) in real browsers, b
 
 Work through the sections in order. Each step says what to do and what you should see. Tick the box, or write the failure in the results table at the end. A failure does not stop the pass: note it and move on, unless it blocks the steps after it.
 
-Time: about two hours for everything, or forty minutes for sections 1 to 5 and 11.
+Time: about two hours for everything, or forty minutes for sections 1 to 6 and 11.
 
 ## 0. Before you start
 
@@ -81,17 +81,30 @@ CHROME=/usr/bin/google-chrome-stable node tools/studio_smoke.js
 - [ ] The chosen scale survives a reload.
 - [ ] Touch: every control can be hit with a finger; menus and window drags work.
 
-## 3. Opening and saving
+## 3. A new project and script text
+
+1. New project from the Project menu, choose Text, and in the folder picker make a new folder `~/studio-trial/fresh`. Then do it again with a folder that already holds a file.
+2. Play the new game for a few turns.
+3. Open `scripts/main.bespoke` from the Project window, press Edit, and change a `say` line's words. Apply. Then break a line (delete a colon) and Apply.
+4. New script, name it `rooms`. In it, write `relation Rested(who)` and Apply. Save.
+
+- [ ] The new folder holds only `scripts/main.bespoke`, written at once, and the project checks valid and plays.
+- [ ] A folder that is not empty is refused, and nothing is written into it.
+- [ ] The text area takes typing, selection, copy and paste, and Ctrl+Z; the window can be resized.
+- [ ] A broken edit is not kept: the window names the line, puts the caret there, and keeps your text.
+- [ ] After Save, `git -C ~/studio-trial diff` (after `git add -N fresh`) shows the changed `say` line, an `include "rooms.bespoke"` line, and the new file, and nothing else.
+
+## 4. Opening and saving
 
 1. Open folder (Ctrl+O), choose `~/studio-trial/vault`. Accept the browser's permission prompt when it asks.
 2. Without changing anything, Save (Ctrl+S).
-3. In a text editor, add a blank line at the end of `vault/main.bespoke` and save it there. Back in the Studio, make any edit (section 6 has one) and Save.
+3. In a text editor, add a blank line at the end of `vault/main.bespoke` and save it there. Back in the Studio, make any edit (section 7 has one) and Save.
 
 - [ ] The Project window lists the scripts and art; the main script is marked, and Check reports it valid.
 - [ ] Save with no edits writes nothing: `git status` is clean.
 - [ ] Save after another program changed a file writes nothing and says which file changed. Undo the outside edit with `git checkout -- .` and reopen the folder.
 
-## 4. Check and the diagnostics
+## 5. Check and the diagnostics
 
 1. In a text editor, break `yard/main.bespoke` (delete the colon after `scene Yard`). Open the `yard` folder in the Studio.
 2. Press Check (Ctrl+K), then Show line in the requester.
@@ -101,7 +114,7 @@ CHROME=/usr/bin/google-chrome-stable node tools/studio_smoke.js
 - [ ] Show line opens the script at that line.
 - [ ] Play on the broken project shows the same error and starts nothing.
 
-## 5. Play
+## 6. Play
 
 On the `vault` project:
 
@@ -116,7 +129,7 @@ On the `vault` project:
 - [ ] Facts lists the live facts; Show line opens the line that wrote one (or lists the candidates).
 - [ ] Play after a close starts a fresh game.
 
-## 6. Paint
+## 7. Paint
 
 On the `vault` project:
 
@@ -132,7 +145,7 @@ On the `vault` project:
 - [ ] After Save, `git diff` shows only the painted PNG, the two new PNGs, and two new `image` lines after the script's last image.
 - [ ] `zig-out/bin/bespoke check ~/studio-trial/vault/main.bespoke` passes.
 
-## 7. Rooms and grids
+## 8. Rooms and grids
 
 On the `yard` project:
 
@@ -146,7 +159,7 @@ On the `yard` project:
 - [ ] After Save, `git diff` changes only the Yard's `room` and grid blocks.
 - [ ] `zig-out/bin/bespoke check ~/studio-trial/yard/main.bespoke` passes on the saved script. In Play, clicking Well walks the Hero there and on into the Hall.
 
-## 8. Cast, values, and dilemmas
+## 9. Cast, values, and dilemmas
 
 On the `yard` project:
 
@@ -158,7 +171,7 @@ On the `yard` project:
 - [ ] The preview's tier matches what the game does when it plays the dilemma.
 - [ ] After Save, `git diff` shows only those lines and the new dilemma block.
 
-## 9. Dialogue
+## 10. Dialogue
 
 On the `yard` project:
 
@@ -173,7 +186,7 @@ On the `yard` project:
 - [ ] New dialogue works in a script with no dialogue, without a window error.
 - [ ] After Save, `git diff` changes only the edited and the new `dialogue` blocks, and Play shows the edited lines when the Guide speaks.
 
-## 10. Export
+## 11. Export
 
 On the `vault` project:
 
@@ -187,7 +200,7 @@ On the `vault` project:
 - [ ] Viewing the page source shows the license near the end, in a `bespoke-license` template.
 - [ ] Firefox saves edits as downloads and exports the same pages.
 
-## 11. Failures
+## 12. Failures
 
 1. Close the tab with unsaved edits.
 2. Play a game until it ends or fails, and press Run again.
@@ -196,7 +209,7 @@ On the `vault` project:
 - [ ] Closing with unsaved edits asks first.
 - [ ] After any error panel, the rest of the Studio keeps working and your files are untouched.
 
-## 12. Recording results
+## 13. Recording results
 
 Copy this table into HANDOFF's session log, fill it in, and date it.
 
@@ -205,15 +218,16 @@ Copy this table into HANDOFF's session log, fill it in, and date it.
 | Commit tested | | |
 | 1. Automated baseline | | |
 | 2. Workspace (mouse / touch) | | |
-| 3. Opening and saving | | |
-| 4. Check and diagnostics | | |
-| 5. Play | | |
-| 6. Paint | | |
-| 7. Rooms and grids | | |
-| 8. Cast, values, and dilemmas | | |
-| 9. Dialogue | | |
-| 10. Export (Chromium / Firefox) | | |
-| 11. Failures | | |
+| 3. New project and script text | | |
+| 4. Opening and saving | | |
+| 5. Check and diagnostics | | |
+| 6. Play | | |
+| 7. Paint | | |
+| 8. Rooms and grids | | |
+| 9. Cast, values, and dilemmas | | |
+| 10. Dialogue | | |
+| 11. Export (Chromium / Firefox) | | |
+| 12. Failures | | |
 
 For each failure:
 
