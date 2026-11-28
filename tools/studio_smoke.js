@@ -35,7 +35,10 @@
 //      exactly those lines, and the command line holds the new value as a fact;
 //  12. (P47-13, D-203) the Dilemmas window writes a new dilemma from its form, previews the tier
 //      from the actor's starting value and a lean, the Cast window ticks a red line, and the
-//      command line plays the saved dilemma to the previewed tier's line.
+//      command line plays the saved dilemma to the previewed tier's line;
+//  13. (P47-04, D-204) the Dialogue window maps a conversation's choices, nested sets, and
+//      guards, marks a guard nothing writes (which the CLI's check also warns about), and opens
+//      the script at a clicked choice.
 'use strict';
 
 const fs = require('fs');
@@ -827,6 +830,37 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  dilemma editor: a new dilemma from its form, previewed at delta ${preview.delta} (${preview.action}), a red line ticked; ${dilCli}`);
+
+    // 13. The dialogue map.
+    const TALK_SRC = 'scene Quay:\n  cast: Hero, Guide\n\nrelation Carries(who, thing)\nrelation Paid(who)\nrelation Sigil(thing)\n\non cue TalksTo(Hero, Guide):\n  say Guide: "Well, traveller?"\n  choice "Pay the toll." if not Paid(Hero):\n    remember Paid(Hero)\n    say Guide: "Thank you kindly."\n    choice "Ask the way.":\n      say Guide: "North, past the mill."\n  choice "Show the sigil." if Carries(Hero, Sigil):\n    say Guide: "Pass, friend."\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(TALK_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    s = await state();
+    const talkWarning = s.result.warnings.find((x) => /never offered/.test(x.message));
+    if (!talkWarning || talkWarning.line !== 15) throw new Error(`the never-offered warning: ${JSON.stringify(s.result.warnings)}`);
+    if (s.requester) await key('Escape', 'Escape', 27);
+    await evaluate('window.bespokeStudio.openDialogue()');
+    const talk = (await state()).dialogue;
+    const nodes = talk.conversations[0].nodes;
+    const shape = nodes.map((n) => `${n.depth}${n.choice ? 'c' : 's'}${n.never}:${n.line}`).join(' ');
+    if (talk.conversations[0].title !== 'on cue TalksTo(Hero, Guide)' || shape !== '0s0:9 0c0:10 1s0:12 1c0:13 2s0:14 0c1:15 1s0:16') throw new Error(`dialogue nodes: ${shape}`);
+    await evaluate("window.bespokeStudio.dialogueClick('choice Ask the way.')");
+    await waitFor('the script at the choice', async () => ((await state()).windows.includes('script:main.bespoke') ? true : null));
+    const talkMarked = await evaluate("document.querySelector('[data-window=\"script:main.bespoke\"] .mark .sr').textContent");
+    if (!/^13\b/.test(talkMarked.trim())) throw new Error(`clicked choice opened ${JSON.stringify(talkMarked)}`);
+    let talkCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-talk-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), TALK_SRC);
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['check', path.join(dir, 'main.bespoke')], { encoding: 'utf8' });
+        if (!/never offered/.test(run.stdout + run.stderr)) throw new Error(`bespoke check did not warn: ${run.stdout}${run.stderr}`);
+        talkCli = 'bespoke check warns about the same choice';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  dialogue map: ${nodes.length} nodes over three depths, the never-offered guard marked, a click opens line 13; ${talkCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

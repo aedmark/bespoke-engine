@@ -571,6 +571,131 @@ pub fn dilemma_sources(arena: std.mem.Allocator, source: []const u8, files: ?Fil
     return .{ .dilemmas = dilemmas, .decisions = decisions, .red_lines = red };
 }
 
+/// One line of a conversation for the dialogue map (P47-04, D-204): a `say` (`choice` false,
+/// `speaker` set) or a `choice` (its guard as written and whether it can hold). `depth` is how
+/// many choices it sits under; a node's children follow it at `depth + 1`.
+pub const DialogueNode = struct {
+    choice: bool,
+    depth: u16,
+    speaker: []const u8 = "",
+    text: []const u8,
+    guard: []const u8 = "",
+    /// 0 when the guard can hold (or there is none), 1 when it never holds, 2 when it always
+    /// holds because it is `not` a relation nothing writes.
+    never: u8 = 0,
+    line: u32,
+};
+/// A body that holds choices: a routine, a cue handler, a `when` rule, or the top level.
+pub const Conversation = struct { title: []const u8, at: ScriptLines, nodes: []const DialogueNode };
+
+/// Parses `source` far enough to list every conversation with choices (P47-04, D-204), as
+/// `cast_sources` does. A guard's relation the script declares and nothing writes is marked,
+/// by the same rule as the compiler's warning (`codegen.written_relations`).
+pub fn dialogue_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) ![]const Conversation {
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    const written = try codegen.written_relations(arena, &ast);
+    var declared = std.StringHashMap(void).init(arena);
+    for (ast.relations.items) |r| try declared.put(r.name, {});
+    const Build = struct {
+        e: includes.Expanded,
+        a: std.mem.Allocator,
+        written: ?std.StringHashMap(void),
+        declared: *const std.StringHashMap(void),
+        nodes: std.ArrayList(DialogueNode) = .empty,
+        any: bool = false,
+
+        fn pattern(b: *@This(), out: *std.ArrayList(u8), p: parser.FactPattern) !void {
+            try out.appendSlice(b.a, p.relation);
+            try out.append(b.a, '(');
+            for (p.args, 0..) |arg, i| {
+                if (i > 0) try out.appendSlice(b.a, ", ");
+                try out.appendSlice(b.a, arg);
+            }
+            try out.append(b.a, ')');
+        }
+
+        fn guard_text(b: *@This(), c: parser.DialogueChoice) ![]const u8 {
+            var out: std.ArrayList(u8) = .empty;
+            if (c.guard) |g| switch (g) {
+                .has_fact => |p| try b.pattern(&out, p),
+                .not_fact => |p| {
+                    try out.appendSlice(b.a, "not ");
+                    try b.pattern(&out, p);
+                },
+                .count_at_least => |x| {
+                    try out.print(b.a, "{d} of ", .{x.threshold});
+                    try b.pattern(&out, x.pattern);
+                },
+                .points_at_least => |x| {
+                    try out.print(b.a, "{d} points of ", .{x.threshold});
+                    try b.pattern(&out, x.pattern);
+                },
+                .roll_gte => |r| try out.print(b.a, "roll {d}d{d} at least {d}", .{ r.count, r.sides, r.threshold }),
+            };
+            for (c.where_patterns, 0..) |p, i| {
+                try out.appendSlice(b.a, if (i == 0) (if (out.items.len > 0) " where " else "where ") else " and ");
+                try b.pattern(&out, p);
+            }
+            return out.items;
+        }
+
+        fn walk(b: *@This(), stmts: []const parser.Stmt, depth: u16) !void {
+            for (stmts) |st| switch (st) {
+                .say => |x| try b.nodes.append(b.a, .{ .choice = false, .depth = depth, .speaker = x.speaker, .text = x.text, .line = b.e.locate(x.line).line }),
+                .loop_stmt => |body| try b.walk(body, depth),
+                .if_stmt => |x| try b.walk(x.body, depth),
+                .interrupt_with => |x| try b.walk(x.body, depth),
+                .choice_block => |cs| {
+                    b.any = true;
+                    for (cs) |c| {
+                        var never: u8 = 0;
+                        if (b.written) |w| {
+                            var buf: [9]parser.FactPattern = undefined;
+                            for (codegen.guard_patterns(c, &buf)) |p| {
+                                if (!b.declared.contains(p.relation) or w.contains(p.relation)) continue;
+                                const negated = if (c.guard) |g| g == .not_fact and std.mem.eql(u8, g.not_fact.relation, p.relation) else false;
+                                never = if (negated) 2 else 1;
+                                break;
+                            }
+                        }
+                        try b.nodes.append(b.a, .{ .choice = true, .depth = depth, .text = c.text, .guard = try b.guard_text(c), .never = never, .line = b.e.locate(c.line).line });
+                        try b.walk(c.body, depth + 1);
+                    }
+                },
+                else => {},
+            };
+        }
+    };
+    var out: std.ArrayList(Conversation) = .empty;
+    const add = struct {
+        fn one(list: *std.ArrayList(Conversation), b: *Build, title: []const u8, line: u32, stmts: []const parser.Stmt) !void {
+            b.nodes = .empty;
+            b.any = false;
+            try b.walk(stmts, 0);
+            if (!b.any) return;
+            const at = b.e.locate(line);
+            try list.append(b.a, .{ .title = title, .at = .{ .script = at.file, .line = at.line, .end_line = at.line }, .nodes = b.nodes.items });
+        }
+    }.one;
+    var b = Build{ .e = expanded, .a = arena, .written = written, .declared = &declared };
+    const first_line: u32 = if (parse.initial_fact_lines.items.len > 0) parse.initial_fact_lines.items[0].line else 1;
+    try add(&out, &b, "Top level", first_line, ast.initial_stmts.items);
+    for (ast.cue_handlers.items) |h| {
+        var title: std.ArrayList(u8) = .empty;
+        try title.print(arena, "on cue {s}(", .{h.cue_name});
+        for (h.params, 0..) |p, i| try title.print(arena, "{s}{s}", .{ if (i > 0) ", " else "", p });
+        try title.append(arena, ')');
+        try add(&out, &b, title.items, h.line, h.body);
+    }
+    for (ast.routines.items) |r| try add(&out, &b, try std.fmt.allocPrint(arena, "routine {s}({s})", .{ r.name, r.entity }), r.line, r.body);
+    return out.items;
+}
+
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
     return check_source_with(allocator, source, null);
 }
@@ -1997,6 +2122,76 @@ test "D-199: room block refusals name the line and the missing thing" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "D-204: dialogue_sources gives each conversation's tree with guards, lines, and never-holding marks" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Quay:
+        \\  cast: Hero, Guide
+        \\
+        \\relation Carries(who, thing)
+        \\relation Paid(who)
+        \\
+        \\on cue TalksTo(Hero, Guide):
+        \\  say Guide: "Well?"
+        \\  choice "Pay the toll." if not Paid(Hero):
+        \\    remember Paid(Hero)
+        \\    say Guide: "Thank you."
+        \\    choice "Ask the way.":
+        \\      say Guide: "North."
+        \\  choice "Show the sigil." if Carries(Hero, Guide):
+        \\    say Guide: "Pass."
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+    ;
+    const conv = try dialogue_sources(arena.allocator(), src, null);
+    try testing.expectEqual(@as(usize, 1), conv.len);
+    try testing.expectEqualStrings("on cue TalksTo(Hero, Guide)", conv[0].title);
+    const n = conv[0].nodes;
+    try testing.expectEqual(@as(usize, 7), n.len);
+    try testing.expect(!n[0].choice and n[0].line == 8);
+    try testing.expectEqualStrings("not Paid(Hero)", n[1].guard);
+    try testing.expectEqual(@as(u8, 0), n[1].never);
+    try testing.expectEqual(@as(u16, 1), n[3].depth);
+    try testing.expectEqualStrings("Ask the way.", n[3].text);
+    try testing.expectEqual(@as(u16, 2), n[4].depth);
+    try testing.expectEqual(@as(u8, 1), n[5].never);
+    try testing.expectEqual(@as(u32, 14), n[5].line);
+}
+
+test "D-204: a choice whose guard nothing remembers warns, at the choice, and a remembered one does not" {
+    const testing = std.testing;
+    const head =
+        \\scene Quay:
+        \\  cast: Hero, Guide
+        \\
+        \\relation Carries(who, thing)
+        \\relation Sigil(thing)
+        \\
+        \\on cue TalksTo(Hero, Guide):
+        \\  choice "Ask about the gate.":
+        \\    say Guide: "It opens at dawn."
+        \\  choice "Show the sigil." if Carries(Hero, Sigil):
+        \\    say Guide: "Then you may pass."
+        \\  choice "Beg." if not Carries(Hero, Sigil):
+        \\    say Guide: "No."
+        \\
+    ;
+    const res = check_source(testing.allocator, head);
+    try testing.expect(res.is_valid);
+    try testing.expectEqual(@as(usize, 2), res.warning_count);
+    try testing.expectEqual(@as(u32, 10), res.warnings[0].line);
+    try testing.expect(std.mem.indexOf(u8, res.warnings[0].message(), "never offered") != null);
+    try testing.expect(std.mem.indexOf(u8, res.warnings[1].message(), "always offered") != null);
+    // Once something remembers the relation, neither choice warns.
+    const fixed = head ++ "routine Find(Hero):\n  remember Carries(Hero, Sigil)\n";
+    const ok = check_source(testing.allocator, fixed);
+    try testing.expectEqual(@as(usize, 0), ok.warning_count);
 }
 
 test "D-203: dilemma_sources lists dilemmas, decisions, and red lines with their line ranges" {

@@ -486,6 +486,69 @@ pub fn fold_exits(fingerprint: u64, exits: []const spatial_mod.Exit) u64 {
     return if (value == 0) 1 else value;
 }
 
+/// The relations something can write in a script (P47-04, D-204): every `remember` in any
+/// body, the engine's author-facing relations, and a duel's. Null for a script with societies
+/// or degradations: their configured states and stages write relations by name in ways this
+/// does not follow, and a false "never holds" would teach authors to ignore the true ones.
+/// The caller deinits the set.
+pub fn written_relations(allocator: std.mem.Allocator, ast: *const parser_mod.AST) !?std.StringHashMap(void) {
+    if (ast.societies.items.len > 0 or ast.degradations.items.len > 0) return null;
+    var written = std.StringHashMap(void).init(allocator);
+    errdefer written.deinit();
+    for (reserved_mod.AUTHOR_FACING) |entry| try written.put(entry.name, {});
+    for (ast.duels.items) |d| {
+        for (d.relations) |r| try written.put(r, {});
+        try written.put(d.fatigue_count_relation, {});
+        for (d.fatigue_stages) |st| try written.put(st.relation, {});
+    }
+    const Walk = struct {
+        fn remembers(set: *std.StringHashMap(void), stmts: []const parser_mod.Stmt) !void {
+            for (stmts) |st| switch (st) {
+                .remember => |r| try set.put(r.relation, {}),
+                .loop_stmt => |b| try remembers(set, b),
+                .if_stmt => |x| try remembers(set, x.body),
+                .interrupt_with => |x| try remembers(set, x.body),
+                .choice_block => |cs| for (cs) |c| try remembers(set, c.body),
+                else => {},
+            };
+        }
+    };
+    try Walk.remembers(&written, ast.initial_stmts.items);
+    for (ast.routines.items) |r| try Walk.remembers(&written, r.body);
+    for (ast.cue_handlers.items) |h| try Walk.remembers(&written, h.body);
+    for (ast.when_rules.items) |r| try Walk.remembers(&written, r.body);
+    for (ast.paths.items) |pd| {
+        try Walk.remembers(&written, pd.facts);
+        for (pd.routines) |r| try Walk.remembers(&written, r.body);
+    }
+    return written;
+}
+
+/// The fact patterns a choice is guarded by: its `if` condition's, then its `where` lines.
+pub fn guard_patterns(choice: parser_mod.DialogueChoice, out: *[9]parser_mod.FactPattern) []const parser_mod.FactPattern {
+    var n: usize = 0;
+    if (choice.guard) |g| switch (g) {
+        .has_fact, .not_fact => |p| {
+            out[n] = p;
+            n += 1;
+        },
+        .count_at_least => |x| {
+            out[n] = x.pattern;
+            n += 1;
+        },
+        .points_at_least => |x| {
+            out[n] = x.pattern;
+            n += 1;
+        },
+        .roll_gte => {},
+    };
+    for (choice.where_patterns) |p| if (n < out.len) {
+        out[n] = p;
+        n += 1;
+    };
+    return out[0..n];
+}
+
 pub fn program_fingerprint(code: []const u8, world: *const World) u64 {
     var h = std.hash.Wyhash.init(0x6265_7370_6f6b_6531);
     h.update(code);
@@ -1422,6 +1485,7 @@ pub const Codegen = struct {
 
         if (mut_self.chunk.count() > bytecode_mod.MAX_BYTECODE_LEN) return error.BytecodeTooLarge;
 
+        try mut_self.warn_unwritten_guards(ast);
         // Art last: nothing after it can fail, so the owned copy never needs an errdefer here
         // (P46-03, D-155). Bindings name their scene or entity by text; interning finds the
         // entity the scene, cast, or props line already made.
@@ -1461,6 +1525,46 @@ pub const Codegen = struct {
             .exits = mut_self.exits,
             .art = art,
         };
+    }
+
+    /// Warns about a choice whose guard can never hold (P47-04, D-204): its relation is one the
+    /// script declares and `written_relations` does not hold it. Such a choice is never offered
+    /// (a `not` guard on it always is).
+    fn warn_unwritten_guards(self: *Codegen, ast: *const parser_mod.AST) !void {
+        var written = (try written_relations(self.allocator, ast)) orelse return;
+        defer written.deinit();
+        var declared = std.StringHashMap(void).init(self.allocator);
+        defer declared.deinit();
+        for (ast.relations.items) |r| try declared.put(r.name, {});
+        const Check = struct {
+            fn walk(cg: *Codegen, w: *const std.StringHashMap(void), d: *const std.StringHashMap(void), stmts: []const parser_mod.Stmt) !void {
+                for (stmts) |st| switch (st) {
+                    .loop_stmt => |b| try walk(cg, w, d, b),
+                    .if_stmt => |x| try walk(cg, w, d, x.body),
+                    .interrupt_with => |x| try walk(cg, w, d, x.body),
+                    .choice_block => |cs| for (cs) |c| {
+                        var buf: [9]parser_mod.FactPattern = undefined;
+                        for (guard_patterns(c, &buf)) |p| {
+                            if (!d.contains(p.relation) or w.contains(p.relation)) continue;
+                            const negated = if (c.guard) |g| g == .not_fact and std.mem.eql(u8, g.not_fact.relation, p.relation) else false;
+                            const message = if (negated)
+                                try std.fmt.allocPrint(cg.allocator, "choice \"{s}\" is always offered: nothing in the script remembers '{s}', so 'not {s}' always holds", .{ c.text, p.relation, p.relation })
+                            else
+                                try std.fmt.allocPrint(cg.allocator, "choice \"{s}\" is never offered: nothing in the script remembers '{s}', so its guard never holds", .{ c.text, p.relation });
+                            try cg.warnings.append(cg.allocator, .{ .context = c.text, .message = message });
+                            break;
+                        }
+                        try walk(cg, w, d, c.body);
+                    },
+                    else => {},
+                };
+            }
+        };
+        try Check.walk(self, &written, &declared, ast.initial_stmts.items);
+        for (ast.routines.items) |r| try Check.walk(self, &written, &declared, r.body);
+        for (ast.cue_handlers.items) |h| try Check.walk(self, &written, &declared, h.body);
+        for (ast.when_rules.items) |r| try Check.walk(self, &written, &declared, r.body);
+        for (ast.paths.items) |pd| for (pd.routines) |r| try Check.walk(self, &written, &declared, r.body);
     }
 
     fn compile_art(self: *Codegen, decl: *const parser_mod.ArtDecl) !image_mod.Art {

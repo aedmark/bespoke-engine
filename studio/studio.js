@@ -4,7 +4,8 @@
 // own; the pixel editor (P47-02, D-196, paint.js), which paints the PNG sheets a script names;
 // the room editor (P47-03, D-200, room.js), which lays out a scene as its room block; and the
 // cast editor (P47-05, D-202, cast.js), which adds names to scenes and sets display names,
-// axes, starting values, and red lines; and the dilemma editor (P47-13, D-203, dilemma.js). An edited file's new bytes stay in the page until Save writes them. The Studio keeps no project state of its own (D-151 item 6): files are
+// axes, starting values, and red lines; the dilemma editor (P47-13, D-203, dilemma.js); and
+// the read-only dialogue map (P47-04, D-204, talk.js). An edited file's new bytes stay in the page until Save writes them. The Studio keeps no project state of its own (D-151 item 6): files are
 // held as the bytes read from disk and nothing is written back unless an editor changed it.
 //
 // Failed modes fall back to a working screen (D-192 item 5): the workspace and its windows
@@ -280,12 +281,14 @@
     roomer.reset();
     caster.reset();
     dilemmer.reset();
+    talker.reset();
     renderProject();
     await check();
     await painter.relist();
     await roomer.relist();
     await caster.relist();
     await dilemmer.relist();
+    await talker.relist();
   }
 
   async function finishOpen(meta, acc) {
@@ -295,6 +298,7 @@
     roomer.reset();
     caster.reset();
     dilemmer.reset();
+    talker.reset();
     for (const w of [...screen.windows]) if (w.id.startsWith('script:') || w.id === 'diagnostics') w.close();
     renderProject();
     if (acc.skipped.length) {
@@ -313,6 +317,7 @@
     await roomer.relist();
     await caster.relist();
     await dilemmer.relist();
+    await talker.relist();
     return true;
   }
 
@@ -824,6 +829,19 @@
     }),
   });
 
+  const talker = createTalk(desk, screen, {
+    ready: (title) => readyToBuild(title, () => talker.open()),
+    showResult: (r) => showResult(r),
+    openScript: (path, l, c) => openScript(path, l, c),
+    listDialogue: () => withCompiler((x) => {
+      const p = put(x, enc.encode(S.project.main));
+      const status = x.studio_dialogue(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      return decodeJson(x);
+    }),
+  });
+
   window.addEventListener('beforeunload', (e) => { if (dirtyFiles().length) { e.preventDefault(); e.returnValue = ''; } });
 
   function line(text, cls) {
@@ -899,7 +917,7 @@
       }
       const edited = dirtyFiles().length;
       if (edited) out.push(line(fit(`${edited} edited file(s) not saved`, n), 'err'));
-      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['art', 'Art'], ['rooms', 'Rooms'], ['cast', 'Cast'], ['dilemmas', 'Dilemmas'], ['save', 'Save'], ['open-folder', 'Open folder']]));
+      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['art', 'Art'], ['rooms', 'Rooms'], ['cast', 'Cast'], ['dilemmas', 'Dilemmas'], ['dialogue', 'Dialogue'], ['save', 'Save'], ['open-folder', 'Open folder']]));
     }
     win.body.replaceChildren(...out);
   }
@@ -1053,6 +1071,7 @@
           { id: 'rooms', label: 'Rooms...' },
           { id: 'cast', label: 'Cast...' },
           { id: 'dilemmas', label: 'Dilemmas...' },
+          { id: 'dialogue', label: 'Dialogue...' },
           { id: 'save', label: 'Save', key: 'S' },
           { id: 'about', label: 'About the Studio' },
         ],
@@ -1067,6 +1086,7 @@
           { id: 'win-rooms', label: 'Rooms' },
           { id: 'win-cast', label: 'Cast' },
           { id: 'win-dilemmas', label: 'Dilemmas' },
+          { id: 'win-dialogue', label: 'Dialogue' },
         ],
       },
       { title: 'Settings', items: [scale(1), scale(2), scale(3)] },
@@ -1088,6 +1108,8 @@
       case 'win-cast': return caster.open();
       case 'dilemmas':
       case 'win-dilemmas': return dilemmer.open();
+      case 'dialogue':
+      case 'win-dialogue': return talker.open();
       case 'save': return save();
       case 'retry': if (await startCompiler() && S.project && loadIntoCompiler() !== null) await check(); return null;
       case 'about': return about();
@@ -1161,6 +1183,8 @@
     openDilemmas: () => dilemmer.open().then(() => true),
     dilemmaGadget: (id) => dilemmer.gadget(id),
     dilemmaField: (id, value) => dilemmer.field(id, value),
+    openDialogue: () => talker.open().then(() => true),
+    dialogueClick: (what) => talker.clickRegion(what),
     importForm: (name, bytes) => { painter.openForm({ name, bytes: Uint8Array.from(bytes) }); return true; },
     // For tests: one click of a tool on a sheet pixel, through the editor's own stroke path.
     paintAt: (name, x, y, tool) => { const e = painter.editor(name); if (!e) return false; e.paintAt(x, y, tool); return true; },
@@ -1185,6 +1209,7 @@
       rooms: roomer.state(),
       cast: caster.state(),
       dilemmas: dilemmer.state(),
+      dialogue: talker.state(),
       faults: S.faults.slice(),
       windows: screen.windows.map((w) => w.id),
       requester: (document.querySelector('.req') || { getAttribute: () => null }).getAttribute('aria-label'),

@@ -172,6 +172,7 @@ include "acts/one.bespoke"
 - Otherwise the fiber suspends. `VM.dialogue_view()` reconstructs the offered set from facts; `VM.choose(index)` clears it and resumes the fiber at the chosen body. The body can `say`, change facts, or call another routine; after it ends, execution continues after the whole set.
 - The set is World state: `DialogueOpen`, `DialogueOption`, `DialogueBody`, `DialogueFiber`, `DialogueEnd`, `DialogueRevision`, and `DialogueChosen` facts survive snapshots and rewinds. Hosts that create choices at runtime use `VM.open_generated_dialogue`, whose options carry an opaque action id instead of a compiled body; `VM.choose` returns that action and no fiber is involved.
 - A host presents an NPC as the speaker with `VM.set_dialogue_speaker(owner, npc)`. The set stays keyed by `owner`, the fiber's entity, so selection is unambiguous.
+- A choice whose guard names a relation the script declares but nothing writes (no `remember` anywhere, not an engine relation) can never be offered, and `bespoke check` warns, naming the choice; a `not` guard on such a relation always holds, which also warns (P47-04, D-204). Scripts with societies or degradations are not checked.
 - Keep each spoken line and choice within 60 characters (`dialogue_panel.MAX_COLUMNS`, D-084); a choice's `[n] ` number counts toward it. The panel fits its width to the text and wraps longer lines, so a short line reads at a glance.
 
 ```bespoke

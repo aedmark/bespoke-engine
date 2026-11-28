@@ -178,6 +178,13 @@ export fn studio_preview_tier(main_ptr: [*]const u8, main_len: usize, name_ptr: 
     return if (ok) 1 else 0;
 }
 
+/// Lists every conversation with choices as JSON in the result buffer (P47-04, D-204). 1
+/// listed, 0 the check's JSON instead, -1 out of memory.
+export fn studio_dialogue(main_ptr: [*]const u8, main_len: usize) i32 {
+    const ok = project.dialogue(main_ptr[0..main_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
 /// Copies the table's bytes for `path` into the blob, so the page reads back a script the
 /// module edited. 1 found, 0 not in the table.
 export fn studio_file(path_ptr: [*]const u8, path_len: usize) i32 {

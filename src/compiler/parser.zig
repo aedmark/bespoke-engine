@@ -92,6 +92,8 @@ pub const Stmt = union(enum) {
     say: struct {
         speaker: []const u8,
         text: []const u8,
+        /// The `say` line, in the expanded text, for the dialogue map (P47-04, D-204).
+        line: u32 = 0,
     },
     animate: struct {
         target: []const u8,
@@ -131,6 +133,8 @@ pub const DialogueChoice = struct {
     guard: ?Expr = null,
     where_patterns: []const FactPattern = &[_]FactPattern{},
     body: []const Stmt,
+    /// The `choice` line, in the expanded text, for the dialogue map (P47-04, D-204).
+    line: u32 = 0,
 };
 
 pub const Routine = struct {
@@ -1000,6 +1004,7 @@ pub const Parser = struct {
                 .kw_choice => {
                     var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);
                     while (self.current.tag == .kw_choice) {
+                        const choice_line: u32 = @intCast(self.current.line);
                         try self.advance(); // consume 'choice'
                         const text = if (self.current.tag == .string_literal)
                             (try self.expect(.string_literal)).slice
@@ -1030,6 +1035,7 @@ pub const Parser = struct {
                             .guard = guard,
                             .where_patterns = try where_patterns.toOwnedSlice(),
                             .body = body,
+                            .line = choice_line,
                         });
                     }
                     try ast.initial_stmts.append(.{ .choice_block = try choices.toOwnedSlice() });
@@ -3617,6 +3623,7 @@ pub const Parser = struct {
                 .kw_choice => {
                     var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);
                     while (self.current.tag == .kw_choice) {
+                        const choice_line: u32 = @intCast(self.current.line);
                         try self.advance(); // consume 'choice'
                         const text = if (self.current.tag == .string_literal)
                             (try self.expect(.string_literal)).slice
@@ -3647,6 +3654,7 @@ pub const Parser = struct {
                             .guard = guard,
                             .where_patterns = try where_patterns.toOwnedSlice(),
                             .body = body,
+                            .line = choice_line,
                         });
                     }
                     try list.append(.{ .choice_block = try choices.toOwnedSlice() });
@@ -3710,6 +3718,7 @@ pub const Parser = struct {
                     try list.append(.{ .interrupt_with = .{ .entity = ent, .body = int_body } });
                 },
                 .kw_say => {
+                    const say_line: u32 = @intCast(self.current.line);
                     try self.advance(); // consume 'say' (P7-04, D-009)
                     const speaker = try self.parse_name();
                     if (self.current.tag == .kw_to) {
@@ -3730,7 +3739,7 @@ pub const Parser = struct {
                         if (self.current.tag == .rparen) try self.advance();
                         break :blk try paren_buf.toOwnedSlice();
                     } else (try self.parse_name());
-                    try list.append(.{ .say = .{ .speaker = speaker, .text = text } });
+                    try list.append(.{ .say = .{ .speaker = speaker, .text = text, .line = say_line } });
                 },
                 .kw_animate => {
                     try self.advance();

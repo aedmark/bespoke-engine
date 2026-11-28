@@ -2579,6 +2579,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** editing lines in place, rejected as much more splicing for a block of many line kinds; pickers for clauses, rejected as larger than the gain while wildcards and negation would need their own controls; no preview, rejected because a tier is the dilemma's whole point and otherwise needs a play-through to see; a typed red-lines list, rejected because the options are a known set.
 
+## D-204 The Dialogue Map Reads Choice Sets as Written; a Guard That Never Holds Is a Compiler Warning (2026-11-27, status: accepted; P47-04)
+
+**Context.** P47-04 promised a dialogue map "written as `dialogue` and `choice` blocks". Scoping found no `dialogue` block in the language: a conversation is `choice "text" [if <guard>] [where <pattern>]:` statements inside cue handlers and routines (D-046), with `say` lines and nested choice sets in their bodies, so writing dialogue means editing statement bodies, which D-202 item 2 kept out of the Studio. The roadmap also asks that a guard that never holds be shown; the engine records pruned branches only at run time (D-058), and the compiler has warnings since P48-10. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **A read-only map first.** P47-04 maps every choice set as written: the conversation it belongs to (a cue handler, routine, or the top level), the speaker, each choice with its guard, and the `say` lines and nested sets under it; any line opens the read-only script view there. Writing dialogue is its own item, P47-14, which starts with a language decision, as rooms did (D-198).
+2. **A guard that never holds is a compiler warning.** When a guard's relation is written by no `remember` in the script, no top-level fact, and no engine relation, the choice can never be offered (and a `not` guard on it is always true); the compiler warns, naming the choice and the relation, so `bespoke check`, the Studio's Diagnostics window, and the map all show it.
+3. **A tree per conversation.** The map draws one conversation at a time, top-down: boxes for what the speaker says, an arrow per choice to what follows, the guard on the arrow, and a never-holding guard marked.
+
+**Consequences.** Built 2026-11-27 (session 132). The parser records the lines of choices and `say` statements, and the supported `compiler.dialogue_sources` reports each conversation (cue handler, routine, or top level) as its nodes in order. `codegen.written_relations` is the one rule the warning and the map share: every `remember` in any body, the engine's author-facing relations, and a duel's; a script with societies or degradations is not checked, because their configured states write relations by name in ways the rule does not follow, and a false warning would teach authors to ignore true ones. The conformance suite has no way to expect a warning, so a compiler test and the Studio smoke test (which runs `bespoke check`) pin the rule. No script in the repository trips it, so no golden or package moves; `bespoke-studio.wasm` went from 584,839 to 596,962 bytes.
+
+**Alternatives:** the language and editor in one item, rejected to keep reviewable changes and to design a dialogue block for hand-written scripts first; editing choice statements in place, rejected because it reverses D-202 for one kind of statement; computing the rule only in the Studio, rejected because the command line would stay silent about a choice no player can see; an indented outline, rejected because nested sets read better as a tree.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

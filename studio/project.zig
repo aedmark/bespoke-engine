@@ -1131,6 +1131,59 @@ pub const Project = struct {
         return true;
     }
 
+    /// Lists every conversation with choices for the dialogue map (P47-04, D-204), as JSON in
+    /// `result`: its title, script and line, and its nodes in order (says and choices, with
+    /// depth, guard, never-holding mark, and line). A script that does not parse gets the
+    /// check's JSON and false.
+    pub fn dialogue(self: *Project, main_path: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse {
+            try self.write_missing(main_path);
+            return false;
+        };
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const conv = compiler.dialogue_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        var buf: [1024]u8 = undefined;
+        try w.raw("{\"valid\":true,\"conversations\":[");
+        for (conv, 0..) |c, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"title\":");
+            try w.string(c.title);
+            try w.raw(",\"script\":");
+            try w.string(table_script(&buf, main_path, dir, c.at.script));
+            try w.raw(",\"line\":");
+            try w.number(c.at.line);
+            try w.raw(",\"nodes\":[");
+            for (c.nodes, 0..) |n, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw(if (n.choice) "{\"choice\":true" else "{\"choice\":false");
+                try w.raw(",\"depth\":");
+                try w.number(n.depth);
+                try w.raw(",\"speaker\":");
+                try w.string(n.speaker);
+                try w.raw(",\"text\":");
+                try w.string(n.text);
+                try w.raw(",\"guard\":");
+                try w.string(n.guard);
+                try w.raw(",\"never\":");
+                try w.number(n.never);
+                try w.raw(",\"line\":");
+                try w.number(n.line);
+                try w.raw("}");
+            }
+            try w.raw("]}");
+        }
+        try w.raw("]}");
+        return true;
+    }
+
     pub fn refuse_room(self: *Project, why: []const u8) !bool {
         self.result.clearRetainingCapacity();
         var w = Json{ .list = &self.result, .allocator = self.allocator };
@@ -1935,4 +1988,15 @@ test "the dilemma editor writes a block and red lines, and previews tiers with t
     try std.testing.expect(!try p.write_dilemma("main.bespoke", "redlines\tValerius\tExecute\tPardon"));
     try std.testing.expect(try p.write_dilemma("main.bespoke", "redlines\tValerius"));
     try std.testing.expect(std.mem.endsWith(u8, p.find("main.bespoke").?, "    picks 1 when Accused(Thief)\n\n"));
+}
+
+test "the dialogue listing gives each conversation's nodes, with never-holding guards marked" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("main.bespoke", "scene Quay:\n  cast: Hero, Guide\n\nrelation Sigil(who)\n\non cue TalksTo(Hero, Guide):\n  choice \"Hello.\":\n    say Guide: \"Hello.\"\n  choice \"Show it.\" if Sigil(Hero):\n    say Guide: \"Pass.\"\n");
+    try std.testing.expect(try p.dialogue("main.bespoke"));
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    parsed.deinit();
+    try std.testing.expect(result_has(&p, "\"title\":\"on cue TalksTo(Hero, Guide)\""));
+    try std.testing.expect(result_has(&p, "\"guard\":\"Sigil(Hero)\",\"never\":1,\"line\":9"));
 }
