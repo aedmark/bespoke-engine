@@ -235,7 +235,7 @@
 <div class="facts">
   <div class="fact"><b>21</b><span>playable games and proofs, from a tavern heist to a sunken vault</span></div>
   <div class="fact"><b>21</b><span>of them play in a web page, no install</span></div>
-  <div class="fact"><b>1,100+</b><span>automated checks, 60 conformance specs, and 19 recorded play-throughs</span></div>
+  <div class="fact"><b>1,100+</b><span>automated checks, 65 conformance specs, and 19 recorded play-throughs</span></div>
   <div class="fact"><b>0</b><span>outside libraries in the core engine</span></div>
   <div class="fact"><b>100%</b><span>repeatable: same inputs, same game, every time</span></div>
 </div>
@@ -322,7 +322,7 @@
 <div class="cards">
   <div class="card"><h3>True-colour pixel art</h3><p>Draw scenes, characters, and props in scripts or import PNG files with no outside image library. Characters and props switch appearances as facts change, carry attached parts, and animate water, fire, and lights via 60 Hz palette colour cycling.</p><p class="hood"><b>Under the hood:</b> 320x180 RGBA art scaled 4x, QOI-compressed in <code>BSP1</code> packages, <code>look</code> appearances (<code>Looks</code>), clickable <code>area</code>s, <code>part</code> offsets, and <code>cycle</code> declarations stored in an optional <code>CYCL</code> section.</p></div>
   <div class="card"><h3>Split scripts and clear names</h3><p>Keep large projects organized across files with <code>include</code>, give things readable player names, and replace every engine sentence for your own style or language. A game project rebuilds when any included script or picture changes.</p><p class="hood"><b>Under the hood:</b> canonical <code>include</code> expansion with per-file error maps, UTF-8 <code>name</code> lines, whole-sentence <code>phrase</code> templates, isolated <code>#</code> engine bookkeeping, and <code>bespoke compile --deps</code> dependency files.</p></div>
-  <div class="card"><h3>Rooms and conversations as blocks</h3><p>Place a room's spots and props by their pixel position on the art, join spots with walkways, and add doorways to other rooms. Write a conversation once as a named block and run it from anywhere it is needed.</p><p class="hood"><b>Under the hood:</b> <code>room &lt;Scene&gt;:</code> blocks with <code>mark</code>, <code>prop</code>, <code>walkway</code>, and <code>exit</code> lines (exits in an <code>EXIT</code> package section); <code>dialogue &lt;Name&gt;:</code> blocks run by <code>talk</code>, compiled to exactly the code of the same lines written inline.</p></div>
+  <div class="card"><h3>Rooms and conversations as blocks</h3><p>Place a room's spots and props by their pixel position on the art, join spots with walkways, and add doorways to other rooms. Write a conversation once as a named block and run it from anywhere it is needed. When the script changes room, the player goes along; a thing dropped in one room is found there by typed commands.</p><p class="hood"><b>Under the hood:</b> <code>room &lt;Scene&gt;:</code> blocks with <code>mark</code>, <code>prop</code>, <code>walkway</code>, and <code>exit</code> lines (exits in an <code>EXIT</code> package section); <code>dialogue &lt;Name&gt;:</code> blocks run by <code>talk</code>, compiled to exactly the code of the same lines written inline.</p></div>
 </div>
 
 <h3>Sound and music, built in</h3>
@@ -485,7 +485,7 @@ routine Inspector(Moss):
 <h2 id="next">What is next</h2>
 <ul>
   <li><strong>Hand-testing the Studio,</strong> then releasing it.</li>
-  <li><strong>Parser-adventure ergonomics:</strong> dynamic scope for dropped and moved items, multi-phrase verb aliases, and scene-transition sync for parser actors.</li>
+  <li><strong>BeSpoke 1.2,</strong> with the Studio and this round of parser-adventure work: things dropped in one room and found in another, several phrases on one command line, and a player who goes along when the script changes room.</li>
   <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>
 

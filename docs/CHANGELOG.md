@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Several phrases on one command line (`P49-05`, `D-210`): `command GoesNorth: "north", "n"`. A script may declare 51 phrases, as before, and `limit commands N` raises that up to 408; a phrase past the limit is now a compile error instead of a frame silently dropped.
+
 - Typed commands find things where the script put them (`P49-04`, `D-209`): an `At(thing, room)` fact puts a thing in that room's scope, and a prop someone carries, or that `At` facts place only elsewhere, is no longer named in the room its scene listed. A parser game can now drop a thing in one room and pick it up in another.
 
 - A script's `transition to scene` brings the player along (`P49-07`, `D-208`): a player who is a cast or routine actor is placed on the new room's first mark after the tick, so typed commands and clicks act in the room the window shows. The stage actor and Zig hosts that place their own players are unchanged.

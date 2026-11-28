@@ -18,6 +18,7 @@ pub const Kind = enum {
     spells,
     words,
     hints,
+    commands,
 };
 
 pub const COUNT = @typeInfo(Kind).@"enum".field_names.len;
@@ -41,6 +42,8 @@ pub const ENTRIES = [COUNT]Entry{
     .{ .name = "spells", .default = 16, .counts = "spells in the spellbook" },
     .{ .name = "words", .default = 12, .counts = "words of one kind in the spellbook" },
     .{ .name = "hints", .default = 3, .counts = "hint tiers in one need" },
+    // 64 frames less the engine's 13 defaults, the room a script always had (P49-05, D-210).
+    .{ .name = "commands", .default = 51, .counts = "command phrases" },
 };
 
 /// The safety cap is a fixed multiple of the default (D-183).

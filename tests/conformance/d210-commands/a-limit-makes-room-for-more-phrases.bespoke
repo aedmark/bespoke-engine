@@ -1,0 +1,24 @@
+# 'limit commands' raises the ceiling, and every phrase and the engine's own frames still work.
+# pins: D-210; D-183
+# ticks: 4
+# input: 0 say51
+# input: 1 look at gate
+# expect line: Hero: "Said."
+# expect line: Hero: "A gate."
+
+limit commands 60
+
+scene Yard:
+  cast: Hero
+  marks: Gate
+
+command Says: "say0", "say1", "say2", "say3", "say4", "say5", "say6", "say7", "say8", "say9", "say10", "say11", "say12", "say13", "say14", "say15", "say16", "say17", "say18", "say19", "say20", "say21", "say22", "say23", "say24", "say25", "say26", "say27", "say28", "say29", "say30", "say31", "say32", "say33", "say34", "say35", "say36", "say37", "say38", "say39", "say40", "say41", "say42", "say43", "say44", "say45", "say46", "say47", "say48", "say49", "say50", "say51"
+
+routine Stay(Hero):
+  wait 100 ticks
+
+on cue Says(Hero):
+  say Hero: "Said."
+
+on cue LooksAt(Hero, Gate):
+  say Hero: "A gate."

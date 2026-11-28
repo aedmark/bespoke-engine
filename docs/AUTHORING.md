@@ -339,7 +339,7 @@ Each of these is a declaration a script carries; [`script_spec.md`](script_spec.
 
 | Mechanic | Declaration | Use it for |
 | --- | --- | --- |
-| Typed commands | `command Pours: "pour <thing> into <thing>"`, `alias` | New verbs and nouns for the command bar |
+| Typed commands | `command Pours: "pour <thing> into <thing>"`, `command GoesNorth: "north", "n"`, `alias`, `limit commands N` | New verbs and nouns for the command bar; several phrases on one line (D-210) |
 | Agendas | `agenda` | An actor who pursues and intercepts another |
 | Goals and hints | `goal` | The next need, phrased from what the character knows |
 | Paths | `path` | Mutually exclusive approaches to a scene, chosen by the host |

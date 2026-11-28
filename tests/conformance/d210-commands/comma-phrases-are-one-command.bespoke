@@ -1,0 +1,22 @@
+# One command line may give several phrases, separated by commas; each is its own frame.
+# pins: D-210
+# ticks: 4
+# input: 0 n
+# input: 1 go north
+# expect line: Hero: "North it is."
+# expect fact: Went(Hero)
+
+scene Yard:
+  cast: Hero
+  marks: Gate
+
+relation Went(who)
+
+command GoesNorth: "north", "n", "go north"
+
+routine Stay(Hero):
+  wait 100 ticks
+
+on cue GoesNorth(Hero):
+  say Hero: "North it is."
+  remember Went(Hero)

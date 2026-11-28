@@ -2056,7 +2056,7 @@ test "P48-13: limits raise a ceiling up to its cap, hints may have six tiers, an
         .{ .source = goal, .line = 7, .column = 10, .message = "4 hint tiers in one need is past the limit of 3; add 'limit hints 6' to raise it, up to 24 (D-183)" },
         .{ .source = "limit hints 25\n" ++ goal, .line = 1, .column = 13, .message = "'limit hints' is 25; it may raise the default of 3 hint tiers in one need up to 24" },
         .{ .source = "limit hints 2\n" ++ goal, .line = 1, .column = 13, .message = "'limit hints' is 2; it may raise the default of 3 hint tiers in one need up to 24" },
-        .{ .source = "limit leans 4\n", .line = 1, .column = 7, .message = "there is no limit on 'leans'; a script may raise goals, needs, decisions, options, dilemmas, axes, spells, words, or hints" },
+        .{ .source = "limit leans 4\n", .line = 1, .column = 7, .message = "there is no limit on 'leans'; a script may raise goals, needs, decisions, options, dilemmas, axes, spells, words, hints, or commands" },
         .{ .source = "limit hints 6\nlimit hints 7\n", .line = 2, .column = 1, .message = "'limit hints' is declared twice" },
     };
     for (cases) |case| {

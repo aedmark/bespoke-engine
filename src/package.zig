@@ -2353,7 +2353,9 @@ pub fn load_package_linked(
     if (comptime linked.contains(.commands)) if (table.get(.commands)) |bytes| {
         var stream: std.Io.Reader = .fixed(bytes);
         const command_count = try stream.takeInt(u32, .little);
-        if (command_count > 256) return error.InvalidCommandConfig;
+        // Held to the frame list's room for script phrases (D-210): the most `limit commands`
+        // allows, which is also what `FrameList.build` keeps.
+        if (command_count > command_mod.MAX_FRAMES - command_mod.DEFAULT_FRAMES.len) return error.InvalidCommandConfig;
         for (0..command_count) |_| {
             var decl = try read_command_declaration(allocator, &stream);
             commands.append(decl) catch |err| {
@@ -2799,6 +2801,27 @@ test "P48-17: a package writes only the sections its program uses" {
     defer compiled.deinit();
     try testing.expect(compiled.routine_entries.contains("Idle"));
     try testing.expect(compiled.art.is_empty());
+}
+
+test "P49-05: a package holds every phrase a raised 'limit commands' allows" {
+    const testing = std.testing;
+    var source = std.array_list.Managed(u8).init(testing.allocator);
+    defer source.deinit();
+    try source.appendSlice("limit commands 300\nentity Hero\ncommand Says: ");
+    for (0..300) |i| {
+        if (i > 0) try source.appendSlice(", ");
+        try source.print("\"say{d}\"", .{i});
+    }
+    try source.appendSlice("\n");
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    try package_of(testing.allocator, source.items, &bytes);
+    var compiled = try load_for_test(bytes.items);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 300), compiled.commands.items.len);
+    // Every script phrase and every engine frame has room.
+    const frames = command_mod.FrameList.build(compiled.commands.items);
+    try testing.expectEqual(300 + command_mod.DEFAULT_FRAMES.len, frames.len);
 }
 
 test "P48-17: an unknown optional section is skipped and an unknown required one refused" {

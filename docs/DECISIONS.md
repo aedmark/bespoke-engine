@@ -2678,6 +2678,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** moving the prop's click spot and art as well, deferred because it touches drawing and hit tests for a parser feature; an engine-run `drop` verb, rejected because where a dropped thing lands is the script's to say.
 
+## D-210 Several Phrases on One Command Line, and a Limit for Commands (2026-11-28, status: accepted; P49-05, follows D-183)
+
+**Context.** Each `command Cue: "..."` line declared one phrase, so a parser game wrote `north` and `n` on two lines (The Sunken Vault has 29 such lines). The frame list held 64 frames, the engine's 13 defaults after the script's, and silently stopped there: a script's 52nd phrase dropped the engine's last frames, and a 65th was lost with no diagnostic. The package loader refused more than 256 commands. The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. `command Cue: "a", "b", "c"` gives several phrases on one line, separated by commas; each compiles to the same entry a line of its own would, so packages do not change.
+2. `commands` becomes a tenth `limit` (D-183): 51 phrases by default, the room scripts always had, up to 408. A phrase past the limit is a compile error naming the `limit` line needed.
+3. The frame list holds the cap and the engine's frames, script phrases first, so no phrase and no engine frame is ever dropped; the package loader holds the count to the same cap.
+
+**Consequences.** Every repository script compiles to the same package. A package with more than 256 phrases loads only in 1.2 and later readers. The frame list is about 90 KB on the stack while a line is read, within the 8 MiB wasm stack. Pinned by a package test and three `d210-commands` conformance cases.
+
+**Alternatives:** an indented block of phrases, not chosen; a comma list may not continue onto the next line, since the indented line reads as a block.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

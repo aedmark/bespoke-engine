@@ -7,6 +7,7 @@
 //! default frames use the engine's conventional cue names, and scripts add their own.
 
 const std = @import("std");
+const limits = @import("limits.zig");
 const world_mod = @import("world.zig");
 const phrase_mod = @import("phrase.zig");
 const spatial_mod = @import("spatial.zig");
@@ -370,7 +371,8 @@ pub const FrameList = struct {
     pub fn build(script: []const CommandDecl) FrameList {
         var list = FrameList{};
         for (script) |decl| {
-            if (list.len == MAX_FRAMES) break;
+            // The engine's frames always keep their room at the end.
+            if (list.len == limits.cap_of(.commands)) break;
             // Compiled and loaded commands were validated; a frame that still fails is skipped
             // rather than aborting every typed line.
             list.items[list.len] = decl.frame() catch continue;
@@ -389,7 +391,10 @@ pub const FrameList = struct {
     }
 };
 
-pub const MAX_FRAMES: usize = 64;
+/// Room for every phrase a script may declare under `limit commands` and the engine's own
+/// frames, so neither is ever dropped (P49-05, D-210). The compiler refuses a script past its
+/// limit and the package loader holds the count to the cap, so `build` never runs out.
+pub const MAX_FRAMES: usize = limits.cap_of(.commands) + DEFAULT_FRAMES.len;
 
 /// A frame matched against words: the noun phrase each slot captured.
 pub const Match = struct {

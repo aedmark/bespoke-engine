@@ -1076,10 +1076,17 @@ pub const Parser = struct {
                     try self.advance();
                     const cue = (try self.expect(.identifier)).slice;
                     _ = try self.expect(.colon);
-                    const text = (try self.expect(.string_literal)).slice;
-                    _ = command_mod.parse_frame(cue, text) catch
-                        return self.set_error("command '{s}' frame \"{s}\" must start with a lowercase word, use at most two <thing> slots, and never put two slots together", .{ cue, text });
-                    try ast.commands.append(.{ .cue = cue, .text = text });
+                    // One phrase, or several separated by commas, each its own frame (D-210).
+                    while (true) {
+                        const phrase = self.current;
+                        const text = (try self.expect(.string_literal)).slice;
+                        _ = command_mod.parse_frame(cue, text) catch
+                            return self.set_error("command '{s}' frame \"{s}\" must start with a lowercase word, use at most two <thing> slots, and never put two slots together", .{ cue, text });
+                        try ast.commands.append(.{ .cue = cue, .text = text });
+                        try self.count_item(.commands, ast.commands.items.len, phrase);
+                        if (self.current.tag != .comma) break;
+                        try self.advance();
+                    }
                 },
                 .kw_score => {
                     const decl = try self.parse_score_decl();
@@ -3337,7 +3344,7 @@ pub const Parser = struct {
         try self.counted.append(self.allocator, .{ .kind = kind, .value = value, .at = at });
     }
 
-    /// `limit <name> N` (P48-13, D-183): the name is one of the nine ceilings, and N lies
+    /// `limit <name> N` (P48-13, D-183): the name is one of the ten ceilings, and N lies
     /// between its default and its safety cap.
     fn parse_limit(self: *Parser, start: Token) !void {
         const name_tok = self.current;
@@ -3346,7 +3353,7 @@ pub const Parser = struct {
             var hints = Suggestions{};
             for (limits_mod.ENTRIES) |entry| hints.consider(name_tok.slice, entry.name);
             self.suggestion = hints.result();
-            return self.error_at(name_tok, "there is no limit on '{s}'; a script may raise goals, needs, decisions, options, dilemmas, axes, spells, words, or hints", .{name_tok.slice});
+            return self.error_at(name_tok, "there is no limit on '{s}'; a script may raise goals, needs, decisions, options, dilemmas, axes, spells, words, hints, or commands", .{name_tok.slice});
         };
         const entry = limits_mod.ENTRIES[@intFromEnum(kind)];
         const number = self.current;

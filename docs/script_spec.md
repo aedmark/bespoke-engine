@@ -346,9 +346,11 @@ A typed line such as `> pour the grog into the mug` is matched against sentence 
 
 ```bespoke
 command Pours: "pour <thing> into <thing>"
-command Takes: "take <thing>"
+command Takes: "take <thing>", "get <thing>", "pick up <thing>"
 alias ExposureSlip: "slip", "receipt"
 ```
+
+- One `command` line may give several phrases for its cue, separated by commas on that line; each is its own frame, as if written on its own line (D-210). A script may declare 51 phrases in all, the room the engine always had beside its 13 frames; `limit commands N` raises that, up to 408, and a phrase past the limit is a compile error rather than a frame dropped.
 
 - A frame is lowercase words and at most two `<thing>` slots, starting with a word and never with two slots side by side. Engine frames: `look at`, `examine`, `x` (`LooksAt`); `appeal to` (`Appeals`, P45-05); `use <thing> with/on <thing>`, `use <thing>` (`Uses`); `ask <thing> about <thing>`, `talk to <thing>` (`TalksTo`); `present <thing> to <thing>`, `show <thing> to <thing>` (`Presents`); `go to`, `walk to` (`WalksTo`).
 - Typed input ignores case, punctuation, and the articles `a`, `an`, `the`.
@@ -617,6 +619,7 @@ limit hints 6
 | `spells` | spells in the spellbook | 16 | 128 |
 | `words` | words of one kind in the spellbook | 12 | 96 |
 | `hints` | hint tiers in one need | 3 | 24 |
+| `commands` | command phrases (D-210) | 51 | 408 |
 
 - A limit is at least its default and at most eight times it; anything else, a name not in the table, or a second line for one name is a compile error. Going past a limit is a compile error on the first item past it, and its help names the `limit` line the script needs.
 - A limit is a compile-time rule: the package does not carry it, and the loader holds every package to the most in the table.
