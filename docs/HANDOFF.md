@@ -93,7 +93,7 @@ _Last updated: 2026-11-28, session 133 (P47-07 on `main`; session 132 landed P47
 ## Session log
 
 ### Session 133 (2026-11-28)
-- **P47-07, export one page (D-207).** The maintainer chose the play module as the runtime, `init`'s own shells with only the loader swapped, and a download. One module serves both shells: the text shell's exports and a second deck live in `studio/play.zig`. Gotcha: a second deck is reachable from the `[2]` key on any stage page, so `Deck.keyed = false` (a new supported field) keeps it off the number keys; the text page's loader hands the shell an instance whose `wasm_init` names deck 1. Gotcha: the text page prints nothing until the first command, so wait for its room name, not its transcript. Phase 47 is done but for `P47-08`, which waits on use.
+- **P47-07, export one page (D-207).** The maintainer chose the play module as the runtime, `init`'s own shells with only the loader swapped, and a download. One module serves both shells: the text shell's exports and a second deck live in `studio/play.zig`. Gotcha: a second deck is reachable from the `[2]` key on any stage page, so `Deck.keyed = false` (a new supported field) keeps it off the number keys; the text page's loader hands the shell an instance whose `wasm_init` names deck 1. Gotcha: the text page prints nothing until the first command, so wait for its room name, not its transcript. Phase 47 is complete: the maintainer dropped `P47-08` (2026-11-28), since the 5x7 face serves the Studio well.
 
 ### Session 132 (2026-11-27)
 - **P47-14, dialogue editor (D-206).** A line form with depths beside the live map; the preview reads the typed block alone with the engine's parser. Depth is counted from a block's distinct indents, so any indent width edits cleanly.
