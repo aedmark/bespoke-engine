@@ -130,3 +130,31 @@ class GalleryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FreshBuildTests(unittest.TestCase):
+    """A built game page older than what it is made from is refused, not compared."""
+
+    def test_a_build_older_than_an_input_is_refused(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            built = root / "index.html"
+            built.write_text("page", encoding="utf-8")
+            source = root / "game" / "main.bespoke"
+            source.parent.mkdir()
+            source.write_text("scene Yard:", encoding="utf-8")
+            os.utime(built, (1000, 1000))
+            os.utime(source, (2000, 2000))
+            with self.assertRaises(SystemExit) as caught:
+                build_site.require_fresh(built, (source.parent,), "rebuild it")
+            self.assertIn("main.bespoke", str(caught.exception))
+            # Rebuilt after the change, it passes.
+            os.utime(built, (3000, 3000))
+            build_site.require_fresh(built, (source.parent,), "rebuild it")
+
+    def test_both_game_pages_are_guarded(self):
+        self.assertIn(ROOT / "scenarios" / "sunken_vault", build_site.SUNKEN_VAULT_INPUTS)
+        self.assertIn(ROOT / "scenarios" / "harbour", build_site.HARBOUR_INPUTS)
+        self.assertIn(ROOT / "src", build_site.ENGINE_INPUTS)

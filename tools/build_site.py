@@ -24,6 +24,16 @@ HARBOUR_PATH = ROOT / "site" / "harbour.html"
 HARBOUR_ARTIFACT = ROOT / "zig-out" / "harbour" / "index.html"
 SUNKEN_VAULT_PATH = ROOT / "site" / "sunken-vault.html"
 SUNKEN_VAULT_ARTIFACT = ROOT / "zig-out" / "sunken-vault" / "index.html"
+# What each built game page is made from. A build older than any of these is stale: the check
+# would otherwise compare the committed page with an old build and pass, as it did for the
+# 1.2.0 release commit, which CI (building fresh) then failed.
+ENGINE_INPUTS = (ROOT / "src", ROOT / "build.zig", ROOT / "build.zig.zon", ROOT / "LICENSE")
+HARBOUR_INPUTS = ENGINE_INPUTS + (ROOT / "scenarios" / "harbour",)
+SUNKEN_VAULT_INPUTS = ENGINE_INPUTS + (
+    ROOT / "scenarios" / "sunken_vault",
+    ROOT / "tools" / "build_sunken_vault.py",
+    ROOT / "tools" / "pack_game_page.py",
+)
 # The standalone proof pages (D-086, D-094, D-122): one deck each, a shared wrapper, the same module.
 PROOF_PAGE_NAMES = (
     "tavern.html",
@@ -142,7 +152,35 @@ def render_site(html: str) -> str:
     return replace_region(html, GALLERY_START, GALLERY_END, render_gallery_block(gallery_entries()), "gallery")
 
 
+def newest_input(inputs) -> tuple[float, Path] | None:
+    """The most recently changed file among `inputs` (files, or folders walked whole)."""
+    newest = None
+    for root in inputs:
+        files = [root] if root.is_file() else [f for f in root.rglob("*") if f.is_file() and "__pycache__" not in f.parts]
+        for f in files:
+            stamp = (f.stat().st_mtime, f)
+            if newest is None or stamp[0] > newest[0]:
+                newest = stamp
+    return newest
+
+
+def require_fresh(artifact: Path, inputs, rebuild: str) -> None:
+    """Refuses a built page older than anything it is made from."""
+    newest = newest_input(inputs)
+    if newest is not None and artifact.exists() and artifact.stat().st_mtime < newest[0]:
+        raise SystemExit(f"{shown(artifact)} is older than {shown(newest[1])}; rebuild it with `{rebuild}` first")
+
+
+def shown(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def load_harbour(path: Path = HARBOUR_ARTIFACT) -> str:
+    if path == HARBOUR_ARTIFACT:
+        require_fresh(path, HARBOUR_INPUTS, "zig build harbour")
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
@@ -150,6 +188,8 @@ def load_harbour(path: Path = HARBOUR_ARTIFACT) -> str:
 
 
 def load_sunken_vault(path: Path = SUNKEN_VAULT_ARTIFACT) -> str:
+    if path == SUNKEN_VAULT_ARTIFACT:
+        require_fresh(path, SUNKEN_VAULT_INPUTS, "python3 tools/build_sunken_vault.py --force zig-out/sunken-vault/index.html")
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
