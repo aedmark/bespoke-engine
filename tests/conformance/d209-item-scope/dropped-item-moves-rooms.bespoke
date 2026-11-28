@@ -1,0 +1,64 @@
+# A prop taken in one room and dropped in another is named where it now lies, not where its
+# scene declared it.
+# pins: D-209
+# ticks: 12
+# input: 0 take lamp
+# input: 1 north
+# input: 2 drop lamp
+# input: 3 south
+# input: 4 take lamp
+# input: 5 north
+# input: 6 take lamp
+# expect line: I don't know the word "lamp".
+# expect fact: Carries(Scene, Lamp)
+# expect no fact: At(Lamp, Cellar)
+
+clock: turns
+
+entity Scene
+
+scene Study:
+  props: Lamp
+  marks: Desk
+
+scene Cellar:
+  marks: Floor
+
+relation Carries(who, what)
+relation At(what, room)
+relation Here(who, room)
+
+command Takes: "take <thing>"
+command Drops: "drop <thing>"
+command GoesNorth: "north"
+command GoesSouth: "south"
+
+remember Here(Scene, Study)
+transition to scene Study
+
+routine Play(Scene):
+  wait 100 ticks
+
+on cue Takes(Scene, Lamp):
+  forget At(Lamp, Study)
+  forget At(Lamp, Cellar)
+  remember Carries(Scene, Lamp)
+  say Scene: "Taken."
+
+on cue Drops(Scene, Lamp):
+  forget Carries(Scene, Lamp)
+  if Here(Scene, Study):
+    remember At(Lamp, Study)
+  if Here(Scene, Cellar):
+    remember At(Lamp, Cellar)
+  say Scene: "Dropped."
+
+on cue GoesNorth(Scene):
+  forget Here(Scene, Study)
+  remember Here(Scene, Cellar)
+  transition to scene Cellar
+
+on cue GoesSouth(Scene):
+  forget Here(Scene, Cellar)
+  remember Here(Scene, Study)
+  transition to scene Study

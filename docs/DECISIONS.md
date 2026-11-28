@@ -2664,6 +2664,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** an explicit `transition <Actor> to scene X` form, rejected for now because existing scripts would stay broken until edited; moving the player whenever the current scene differs from its room, rejected because watching another room (D-139, The Long Gallery) keeps the player where they stand.
 
+## D-209 Typed Commands Find Things Where At Facts Put Them (2026-11-28, status: accepted; P49-04)
+
+**Context.** Typed nouns resolve against a scope of the actor's room (`command.Scope.gather`): people standing there, its marks, the props its scene lists, and what the actor holds. A prop's room is fixed by its scene, so a pure-parser game could not drop a thing in one room and pick it up in another: the prop stayed nameable where it was declared and nowhere else. The Sunken Vault already writes `At(Scene, room)` for the player. The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. An `At(thing, room)` fact puts the thing in that room's scope, whatever its scene listed.
+2. A prop leaves the scope of the room its scene listed when anyone holds it (`Carries` or `InInventory`) or when it has `At` facts and none names that room.
+3. Scripts write the facts; the engine only reads them. There is no engine `drop` verb, and the relation is found by name (`At`, `Carries`, `InInventory`), like the hold relations before it.
+4. Scope only: the prop's picture and click spot stay where the scene put them.
+
+**Consequences.** A parser game moves things between rooms with two lines in its own handler. A prop that a non-player character carries is no longer named in the room where it was declared, which no repository script relied on: the proof goldens, the conformance suite, and The Sunken Vault's checks are unchanged. Pinned by a unit test and `tests/conformance/d209-item-scope/`.
+
+**Alternatives:** moving the prop's click spot and art as well, deferred because it touches drawing and hit tests for a parser feature; an engine-run `drop` verb, rejected because where a dropped thing lands is the script's to say.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

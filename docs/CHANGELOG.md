@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Typed commands find things where the script put them (`P49-04`, `D-209`): an `At(thing, room)` fact puts a thing in that room's scope, and a prop someone carries, or that `At` facts place only elsewhere, is no longer named in the room its scene listed. A parser game can now drop a thing in one room and pick it up in another.
+
 - A script's `transition to scene` brings the player along (`P49-07`, `D-208`): a player who is a cast or routine actor is placed on the new room's first mark after the tick, so typed commands and clicks act in the room the window shows. The stage actor and Zig hosts that place their own players are unchanged.
 
 - The Studio exports the game as one page (`P47-07`, `D-207`): Export page in the Project menu builds the project and downloads `<game>.html`, the stage or text page `bespoke init` writes, with the game and its runtime inside and the license kept, so it opens from disk and plays like the Play window. Nothing in the project changes. Hosts gain `Deck.keyed`, which keeps a deck off the number keys.

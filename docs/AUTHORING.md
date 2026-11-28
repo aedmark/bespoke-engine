@@ -387,6 +387,21 @@ goal RecoverThePlate:
 
 A classic parser adventure measures time in turns: `clock: turns` makes the clock move only when the player does something the game understands, so a boat that lands three turns after you board is `wait 3 ticks` in its routine. A mistyped command costs nothing, and saving or asking for a hint never takes a turn (D-188). Walking still passes time, one tick a step, until the walker arrives.
 
+### Dropping and moving things
+
+The engine does not drop things for you; a `drop` command is the script's own, and it says where the thing lies with an `At(thing, room)` fact (D-209). Typed commands then find it there: an `At` fact puts a thing in that room, and a prop someone carries, or whose `At` facts name only other rooms, is gone from the room its scene listed. Its picture and click spot stay where the scene put them.
+
+```bespoke
+relation Carries(who, what)
+relation At(what, room)
+
+command Drops: "drop <thing>"
+
+on cue Drops(Scene, Lamp):
+  forget Carries(Scene, Lamp)
+  remember At(Lamp, Cellar)
+```
+
 ### Several files
 
 A larger game can keep its parts apart: `include "art.bespoke"` reads another file in place, once, with paths from the main script's folder (D-169). Keep what is shared, such as scenes and relations, in the main script and give each act or each kind of thing its own file. `proofs/art/lamplighter/` keeps The Lamplighter's Round's art and talk in `art.bespoke` and `talk.bespoke`. An error names the file it is in.

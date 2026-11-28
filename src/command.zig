@@ -246,7 +246,14 @@ pub fn matches(world: *const World, aliases: []const AliasDecl, entity: EntityId
 }
 
 /// The entities a typed noun may name (D-057 point 3): agents, hotspots, and marks in the
-/// actor's room, and what the actor holds. The actor itself is excluded.
+/// actor's room, things an `At(thing, room)` fact puts there (P49-04, D-209), and what the
+/// actor holds. A prop that someone carries, or that `At` facts place only in other rooms, has
+/// left the room its scene declared. The actor itself is excluded.
+/// The relation a script writes to say where a thing is now: `At(thing, room)` (D-209).
+pub const LOCATION_RELATION = "At";
+/// The relations that say who holds a thing; a held thing is in its holder's scope.
+pub const HOLD_RELATIONS = [_][]const u8{ "Carries", "InInventory" };
+
 pub const Scope = struct {
     items: [MAX_SCOPE]EntityId = undefined,
     len: usize = 0,
@@ -277,19 +284,45 @@ pub const Scope = struct {
                     const wp = sp.graph.get_waypoint(entry.value_ptr.current_wp) orelse continue;
                     if (wp.room == r) scope.add(entry.key_ptr.*, actor);
                 }
-                for (sp.hotspots.items) |hs| if (hs.room == r) scope.add(hs.entity, actor);
+                for (sp.hotspots.items) |hs| {
+                    if (hs.room == r and !moved_away(world, hs.entity, r)) scope.add(hs.entity, actor);
+                }
                 for (sp.graph.waypoints.items) |wp| {
                     if (wp.room != r) continue;
                     if (world.lookup_entity(wp.name)) |mark| scope.add(mark, actor);
                 }
             }
         }
-        for ([_][]const u8{ "Carries", "InInventory" }) |relation_name| {
+        // Things put in the room by a fact, wherever their scene declared them: a dropped or
+        // moved prop. Scripts write these facts; the engine only reads them (D-209).
+        if (room) |r| if (world.lookup_relation(LOCATION_RELATION)) |at| {
+            var q = world.query(null, at, r.to_int());
+            while (q.next()) |fact| scope.add(fact.subject, actor);
+        };
+        for (HOLD_RELATIONS) |relation_name| {
             const relation = world.lookup_relation(relation_name) orelse continue;
             var q = world.query(actor, relation, null);
             while (q.next()) |fact| scope.add(EntityId.from_int(fact.object_or_value), actor);
         }
         return scope;
+    }
+
+    /// True when a prop is no longer where its scene put it: someone holds it, or it has `At`
+    /// facts and none names `room`.
+    fn moved_away(world: *const World, entity: EntityId, room: EntityId) bool {
+        for (HOLD_RELATIONS) |relation_name| {
+            const relation = world.lookup_relation(relation_name) orelse continue;
+            var held = world.query(null, relation, entity.to_int());
+            if (held.next() != null) return true;
+        }
+        const at = world.lookup_relation(LOCATION_RELATION) orelse return false;
+        var placed = world.query(entity, at, null);
+        var elsewhere = false;
+        while (placed.next()) |fact| {
+            if (fact.object_or_value == room.to_int()) return false;
+            elsewhere = true;
+        }
+        return elsewhere;
     }
 };
 
@@ -707,6 +740,48 @@ test "P26-01: nouns resolve within scope, through aliases, and report ambiguity"
     try testing.expect(known_word(&world, &aliases, &scope, &frames, "examine"));
     try testing.expect(known_word(&world, &aliases, &scope, &frames, "lantern"));
     try testing.expect(!known_word(&world, &aliases, &scope, &frames, "xyzzy"));
+}
+
+test "P49-04: At facts carry a prop between rooms, and a carried prop leaves its room" {
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const study = try world.intern_entity("DropStudy");
+    const cellar = try world.intern_entity("DropCellar");
+    _ = try spatial.graph.add_waypoint(study, 0, 0, "DropDesk");
+    _ = try spatial.graph.add_waypoint(cellar, 0, 0, "DropFloor");
+    const hero = try world.intern_entity("DropHero");
+    const lamp = try world.intern_entity("DropLamp");
+    const cook = try world.intern_entity("DropCook");
+    try spatial.add_hotspot(lamp, study, .{ .x = 0, .y = 0 }, 2, "Lamp", "A lamp.");
+    const has = struct {
+        fn in(scope: Scope, e: EntityId) bool {
+            return std.mem.indexOfScalar(EntityId, scope.slice(), e) != null;
+        }
+    }.in;
+    // Declared in the study, with no facts yet: there, and only there.
+    try testing.expect(has(Scope.gather(&world, &spatial, study, hero), lamp));
+    try testing.expect(!has(Scope.gather(&world, &spatial, cellar, hero), lamp));
+
+    // Someone else holds it: it is in no room's scope.
+    const carries = try world.intern_relation("Carries", .set);
+    try world.remember(cook, carries, lamp.to_int(), 0);
+    try testing.expect(!has(Scope.gather(&world, &spatial, study, hero), lamp));
+    _ = world.forget(cook, carries, lamp.to_int());
+
+    // Dropped in the cellar: in the cellar's scope, not the study's.
+    const at = try world.intern_relation("At", .set);
+    try world.remember(lamp, at, cellar.to_int(), 0);
+    try testing.expect(has(Scope.gather(&world, &spatial, cellar, hero), lamp));
+    try testing.expect(!has(Scope.gather(&world, &spatial, study, hero), lamp));
+    // Put back where it was declared, it is there again.
+    _ = world.forget(lamp, at, cellar.to_int());
+    try world.remember(lamp, at, study.to_int(), 0);
+    try testing.expect(has(Scope.gather(&world, &spatial, study, hero), lamp));
+    try testing.expect(!has(Scope.gather(&world, &spatial, cellar, hero), lamp));
+    // Facts alone place a thing without a map, as a host with no spatial system has.
+    try testing.expect(has(Scope.gather(&world, null, study, hero), lamp));
 }
 
 test "P26-02: frames match slots bounded by their next word" {
