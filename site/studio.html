@@ -847,8 +847,10 @@ function createPlay(desk, screen, hooks) {
 
   // Hands `pkg` (a .bspk package) to the play module and starts it with a fresh seed. Returns
   // the window's state; a package the runtime refuses is reported in a requester.
-  async function run(pkg) {
+  // `label` names what is running, the main script, in the window's title.
+  async function run(pkg, label) {
     open();
+    if (label) win.setTitle(`Play ${label}`);
     clearInterval(timer);
     timer = null;
     P.status = 'starting';
@@ -1100,7 +1102,7 @@ function createPlay(desk, screen, hooks) {
   }
 
   function state() {
-    return { status: P.status, failure: P.failure, tick: P.tick, runs: P.runs, sound: P.sound, open: Boolean(win) };
+    return { status: P.status, failure: P.failure, tick: P.tick, runs: P.runs, sound: P.sound, open: Boolean(win), title: win ? win.el.getAttribute('aria-label') : null };
   }
 
   return { open, run, close, state, key, guard };
@@ -1192,7 +1194,8 @@ function createPaint(desk, screen, hooks) {
     if (!artWin) return;
     const n = cols(artWin);
     const out = [];
-    if (!art || !art.images.length) out.push(line('This script declares no images.'));
+    if (!art) out.push(line(fit('No listing: the main script did not check.', n)));
+    else if (!art.images.length) out.push(line(fit(`${hooks.mainScript()} declares no images.`, n)));
     else {
       out.push(line(fit(art.palette.length ? `Palette: ${art.palette.length} colour(s)` : 'Palette: any colour', n)));
       const listEl = document.createElement('div');
@@ -1765,7 +1768,18 @@ function createPaint(desk, screen, hooks) {
     return formWin;
   }
 
-  // Closes every editor, as a new project opens.
+  // Lists the main script's art again for an open Art window, after the project or its main
+  // script changed. A script that does not check leaves the window saying so; the project
+  // window already shows the diagnostic.
+  async function relist() {
+    if (!artWin) return;
+    const r = hooks.listArt();
+    art = r && r.valid ? r : null;
+    renderArt();
+  }
+
+  // Closes every editor and form, as a new project opens or another main script is chosen:
+  // each belongs to the script it was opened for.
   function reset() {
     for (const ed of [...editors.values()]) ed.close();
     if (formWin) { formWin.close(); formWin = null; }
@@ -1777,6 +1791,7 @@ function createPaint(desk, screen, hooks) {
     openArt,
     openImage,
     openForm,
+    relist,
     form: () => formWin,
     reset,
     state: () => ({ art: Boolean(art), images: art ? art.images.map((i) => ({ name: i.name, file: i.file })) : [], palette: art ? art.palette.length : 0, editors: [...editors.values()].map((e) => e.state()) }),
@@ -1883,7 +1898,8 @@ function createRooms(desk, screen, hooks) {
     if (!listWin) return;
     const n = cols(listWin);
     const out = [];
-    if (!listing || !listing.scenes.length) out.push(line('This script declares no scenes with scene <Name>:.'));
+    if (!listing) out.push(line(fit('No listing: the main script did not check.', n)));
+    else if (!listing.scenes.length) out.push(line(fit(`${hooks.mainScript()} declares no scenes with scene <Name>:.`, n)));
     else {
       const el = document.createElement('div');
       el.className = 'list';
@@ -2326,16 +2342,28 @@ function createRooms(desk, screen, hooks) {
     return E;
   }
 
+  // Closes every Room window, as a new project opens or another main script is chosen: a
+  // room editor belongs to the script it was opened for, and writing through one after the
+  // main script changed would edit the wrong script.
   function reset() {
     for (const ed of [...editors.values()]) ed.close();
     listing = null;
     if (listWin) renderList();
   }
 
+  // Lists the main script's scenes again for an open Rooms window.
+  async function relist() {
+    if (!listWin) return;
+    const r = hooks.listRooms();
+    listing = r && r.valid ? r : null;
+    renderList();
+  }
+
   return {
     openRooms,
     openScene,
     reset,
+    relist,
     snap,
     state: () => ({ scenes: listing ? listing.scenes.map((s) => s.name) : [], editors: [...editors.values()].map((e) => e.state()) }),
     editor: (name) => editors.get(name) || null,
@@ -2614,6 +2642,20 @@ function createRooms(desk, screen, hooks) {
     return finishOpen({ name, handle: null, writable: false }, acc);
   }
 
+  // Another main script: the art and room editors belonged to the old one, so they close, and
+  // open listings are made again for the new one after its check.
+  async function chooseScript(main) {
+    if (S.project.main === main) return;
+    S.project.main = main;
+    S.result = null;
+    painter.reset();
+    roomer.reset();
+    renderProject();
+    await check();
+    await painter.relist();
+    await roomer.relist();
+  }
+
   async function finishOpen(meta, acc) {
     S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: chooseMain(acc.files) };
     S.result = null;
@@ -2633,6 +2675,8 @@ function createRooms(desk, screen, hooks) {
     }
     if (loadIntoCompiler() === null) return true;
     await check();
+    await painter.relist();
+    await roomer.relist();
     return true;
   }
 
@@ -2764,7 +2808,7 @@ function createRooms(desk, screen, hooks) {
     if (!built) return null;
     await showResult(built.result);
     if (!built.pkg) return null;
-    return player.run(built.pkg);
+    return player.run(built.pkg, S.project.main);
   }
 
   async function showResult(r) {
@@ -2975,7 +3019,7 @@ function createRooms(desk, screen, hooks) {
       return { ok: true, bytes: new Uint8Array(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice() };
     }) || { ok: false, error: 'the compiler is not running' },
     fileReverted: (path) => { const f = findFile(path); if (f) painterFileChanged(path, f.original || f.base); },
-    mainScript: () => S.project.main,
+    mainScript: () => (S.project ? S.project.main : ''),
     scripts: () => S.project.files.map((f) => f.path).filter((p) => /\.bespoke$/i.test(p)).sort(),
     pickPng: () => pickPng(),
     // One new image (D-197): the module adds the PNG and the line and checks the project; the
@@ -3025,6 +3069,7 @@ function createRooms(desk, screen, hooks) {
   }
   const roomer = createRooms(desk, screen, {
     ready: (title) => readyToBuild(title, () => roomer.openRooms()),
+    mainScript: () => (S.project ? S.project.main : ''),
     home: () => projectWindow(),
     showResult: (r) => showResult(r),
     listArt: () => listArt(),
@@ -3078,7 +3123,7 @@ function createRooms(desk, screen, hooks) {
         if (msg.kind === 'close') { projectWin.close(); projectWin = null; return; }
         if (msg.kind === 'resize') { renderProject(); return; }
         if (msg.kind !== 'gadget') return;
-        if (msg.id.startsWith('main:')) { S.project.main = msg.id.slice(5); S.result = null; renderProject(); await check(); return; }
+        if (msg.id.startsWith('main:')) { await chooseScript(msg.id.slice(5)); return; }
         await command(msg.id);
       },
     });
@@ -3248,7 +3293,7 @@ function createRooms(desk, screen, hooks) {
     const n = cols(aboutWin);
     const lines = [
       `BeSpoke Studio ${STUDIO_BUILD.version}`,
-      'Open a project folder to check its scripts, Play to run the game, and Art to paint its PNGs.',
+      'Open a project folder to check its scripts, Play to run the game, Art to paint its PNGs, and Rooms to lay out its scenes.',
       menuHint(),
       'Drag the screen down by its title bar.',
     ];
@@ -3257,6 +3302,13 @@ function createRooms(desk, screen, hooks) {
     for (const l of lines) for (const part of desk.wrapText(l, n)) out.push(line(part));
     out.push(buttons(aboutWin, [['open-folder', 'Open folder'], ['about-ok', 'OK']]));
     aboutWin.body.replaceChildren(...out);
+    // The window grows (upward, so it stays in its corner) until every line shows; the text
+    // grew with Play and Art, and a fixed height cut its last line off.
+    const short = aboutWin.body.scrollHeight - aboutWin.body.clientHeight;
+    if (short > 0) {
+      const r = aboutWin.rect;
+      aboutWin.place(r.x, r.y - short, r.w, r.h + short);
+    }
     return aboutWin;
   }
 
@@ -3350,6 +3402,7 @@ function createRooms(desk, screen, hooks) {
   window.bespokeStudio = {
     version: STUDIO_BUILD.version,
     openDirectory,
+    chooseScript,
     check,
     play,
     // Hands raw bytes to the play window as if they were a built package, so a test can show

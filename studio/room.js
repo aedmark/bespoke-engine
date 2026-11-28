@@ -96,7 +96,8 @@ function createRooms(desk, screen, hooks) {
     if (!listWin) return;
     const n = cols(listWin);
     const out = [];
-    if (!listing || !listing.scenes.length) out.push(line('This script declares no scenes with scene <Name>:.'));
+    if (!listing) out.push(line(fit('No listing: the main script did not check.', n)));
+    else if (!listing.scenes.length) out.push(line(fit(`${hooks.mainScript()} declares no scenes with scene <Name>:.`, n)));
     else {
       const el = document.createElement('div');
       el.className = 'list';
@@ -539,16 +540,28 @@ function createRooms(desk, screen, hooks) {
     return E;
   }
 
+  // Closes every Room window, as a new project opens or another main script is chosen: a
+  // room editor belongs to the script it was opened for, and writing through one after the
+  // main script changed would edit the wrong script.
   function reset() {
     for (const ed of [...editors.values()]) ed.close();
     listing = null;
     if (listWin) renderList();
   }
 
+  // Lists the main script's scenes again for an open Rooms window.
+  async function relist() {
+    if (!listWin) return;
+    const r = hooks.listRooms();
+    listing = r && r.valid ? r : null;
+    renderList();
+  }
+
   return {
     openRooms,
     openScene,
     reset,
+    relist,
     snap,
     state: () => ({ scenes: listing ? listing.scenes.map((s) => s.name) : [], editors: [...editors.values()].map((e) => e.state()) }),
     editor: (name) => editors.get(name) || null,

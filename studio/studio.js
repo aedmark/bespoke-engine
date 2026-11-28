@@ -269,6 +269,20 @@
     return finishOpen({ name, handle: null, writable: false }, acc);
   }
 
+  // Another main script: the art and room editors belonged to the old one, so they close, and
+  // open listings are made again for the new one after its check.
+  async function chooseScript(main) {
+    if (S.project.main === main) return;
+    S.project.main = main;
+    S.result = null;
+    painter.reset();
+    roomer.reset();
+    renderProject();
+    await check();
+    await painter.relist();
+    await roomer.relist();
+  }
+
   async function finishOpen(meta, acc) {
     S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: chooseMain(acc.files) };
     S.result = null;
@@ -288,6 +302,8 @@
     }
     if (loadIntoCompiler() === null) return true;
     await check();
+    await painter.relist();
+    await roomer.relist();
     return true;
   }
 
@@ -419,7 +435,7 @@
     if (!built) return null;
     await showResult(built.result);
     if (!built.pkg) return null;
-    return player.run(built.pkg);
+    return player.run(built.pkg, S.project.main);
   }
 
   async function showResult(r) {
@@ -630,7 +646,7 @@
       return { ok: true, bytes: new Uint8Array(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice() };
     }) || { ok: false, error: 'the compiler is not running' },
     fileReverted: (path) => { const f = findFile(path); if (f) painterFileChanged(path, f.original || f.base); },
-    mainScript: () => S.project.main,
+    mainScript: () => (S.project ? S.project.main : ''),
     scripts: () => S.project.files.map((f) => f.path).filter((p) => /\.bespoke$/i.test(p)).sort(),
     pickPng: () => pickPng(),
     // One new image (D-197): the module adds the PNG and the line and checks the project; the
@@ -680,6 +696,7 @@
   }
   const roomer = createRooms(desk, screen, {
     ready: (title) => readyToBuild(title, () => roomer.openRooms()),
+    mainScript: () => (S.project ? S.project.main : ''),
     home: () => projectWindow(),
     showResult: (r) => showResult(r),
     listArt: () => listArt(),
@@ -733,7 +750,7 @@
         if (msg.kind === 'close') { projectWin.close(); projectWin = null; return; }
         if (msg.kind === 'resize') { renderProject(); return; }
         if (msg.kind !== 'gadget') return;
-        if (msg.id.startsWith('main:')) { S.project.main = msg.id.slice(5); S.result = null; renderProject(); await check(); return; }
+        if (msg.id.startsWith('main:')) { await chooseScript(msg.id.slice(5)); return; }
         await command(msg.id);
       },
     });
@@ -903,7 +920,7 @@
     const n = cols(aboutWin);
     const lines = [
       `BeSpoke Studio ${STUDIO_BUILD.version}`,
-      'Open a project folder to check its scripts, Play to run the game, and Art to paint its PNGs.',
+      'Open a project folder to check its scripts, Play to run the game, Art to paint its PNGs, and Rooms to lay out its scenes.',
       menuHint(),
       'Drag the screen down by its title bar.',
     ];
@@ -912,6 +929,13 @@
     for (const l of lines) for (const part of desk.wrapText(l, n)) out.push(line(part));
     out.push(buttons(aboutWin, [['open-folder', 'Open folder'], ['about-ok', 'OK']]));
     aboutWin.body.replaceChildren(...out);
+    // The window grows (upward, so it stays in its corner) until every line shows; the text
+    // grew with Play and Art, and a fixed height cut its last line off.
+    const short = aboutWin.body.scrollHeight - aboutWin.body.clientHeight;
+    if (short > 0) {
+      const r = aboutWin.rect;
+      aboutWin.place(r.x, r.y - short, r.w, r.h + short);
+    }
     return aboutWin;
   }
 
@@ -1005,6 +1029,7 @@
   window.bespokeStudio = {
     version: STUDIO_BUILD.version,
     openDirectory,
+    chooseScript,
     check,
     play,
     // Hands raw bytes to the play window as if they were a built package, so a test can show

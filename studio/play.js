@@ -83,8 +83,10 @@ function createPlay(desk, screen, hooks) {
 
   // Hands `pkg` (a .bspk package) to the play module and starts it with a fresh seed. Returns
   // the window's state; a package the runtime refuses is reported in a requester.
-  async function run(pkg) {
+  // `label` names what is running, the main script, in the window's title.
+  async function run(pkg, label) {
     open();
+    if (label) win.setTitle(`Play ${label}`);
     clearInterval(timer);
     timer = null;
     P.status = 'starting';
@@ -336,7 +338,7 @@ function createPlay(desk, screen, hooks) {
   }
 
   function state() {
-    return { status: P.status, failure: P.failure, tick: P.tick, runs: P.runs, sound: P.sound, open: Boolean(win) };
+    return { status: P.status, failure: P.failure, tick: P.tick, runs: P.runs, sound: P.sound, open: Boolean(win), title: win ? win.el.getAttribute('aria-label') : null };
   }
 
   return { open, run, close, state, key, guard };

@@ -83,7 +83,8 @@ function createPaint(desk, screen, hooks) {
     if (!artWin) return;
     const n = cols(artWin);
     const out = [];
-    if (!art || !art.images.length) out.push(line('This script declares no images.'));
+    if (!art) out.push(line(fit('No listing: the main script did not check.', n)));
+    else if (!art.images.length) out.push(line(fit(`${hooks.mainScript()} declares no images.`, n)));
     else {
       out.push(line(fit(art.palette.length ? `Palette: ${art.palette.length} colour(s)` : 'Palette: any colour', n)));
       const listEl = document.createElement('div');
@@ -656,7 +657,18 @@ function createPaint(desk, screen, hooks) {
     return formWin;
   }
 
-  // Closes every editor, as a new project opens.
+  // Lists the main script's art again for an open Art window, after the project or its main
+  // script changed. A script that does not check leaves the window saying so; the project
+  // window already shows the diagnostic.
+  async function relist() {
+    if (!artWin) return;
+    const r = hooks.listArt();
+    art = r && r.valid ? r : null;
+    renderArt();
+  }
+
+  // Closes every editor and form, as a new project opens or another main script is chosen:
+  // each belongs to the script it was opened for.
   function reset() {
     for (const ed of [...editors.values()]) ed.close();
     if (formWin) { formWin.close(); formWin = null; }
@@ -668,6 +680,7 @@ function createPaint(desk, screen, hooks) {
     openArt,
     openImage,
     openForm,
+    relist,
     form: () => formWin,
     reset,
     state: () => ({ art: Boolean(art), images: art ? art.images.map((i) => ({ name: i.name, file: i.file })) : [], palette: art ? art.palette.length : 0, editors: [...editors.values()].map((e) => e.state()) }),

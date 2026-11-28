@@ -226,7 +226,9 @@ async function run(pageUrl) {
     let s = await load('start');
     if (s.compiler.state !== 'ready' || s.fault || s.faults.length) throw new Error(`start: ${JSON.stringify(s)}`);
     if (!s.windows.includes('project')) throw new Error('start: no Project window');
-    console.log(`ok  workspace up, compiler ready, windows ${s.windows.join(', ')}`);
+    const aboutFits = await evaluate(`(() => { const b = document.querySelector('[data-window="about"] .body'); return b.scrollHeight <= b.clientHeight; })()`);
+    if (!aboutFits) throw new Error('the About window cuts its text off');
+    console.log(`ok  workspace up, compiler ready, windows ${s.windows.join(', ')}, About shows all its text`);
 
     // 2. Open and save without edits.
     await evaluate(WRITE_FIXTURE(VALID));
@@ -325,7 +327,8 @@ async function run(pageUrl) {
     await waitFor('one step', async () => ((await state()).play.tick === held + 1 ? true : null));
     await click('[data-window="play"] [data-gadget="play-pause"]');
     await waitFor('the clock again', async () => ((await state()).play.tick > held + 2 ? true : null));
-    console.log(`ok  a real-time game plays in its own module; Pause holds tick ${held}, Step moves one`);
+    if ((await state()).play.title !== 'Play scripts/main.bespoke') throw new Error(`play title: ${(await state()).play.title}`);
+    console.log(`ok  a real-time game plays in its own module, titled with its script; Pause holds tick ${held}, Step moves one`);
 
     // The Sunken Vault, PNG art and all, on its turn clock: a typed command is one turn.
     await evaluate(WRITE_FIXTURE(VAULT));
@@ -642,7 +645,15 @@ async function run(pageUrl) {
     await noRequester();
     s = await state();
     if (s.project.files.find((f) => f.path === 'main.bespoke').dirty) throw new Error('Cancel on the comment requester still wrote the block');
-    console.log(`ok  room editor: move, undo to the script's own bytes, walkway, exit, area, each checked; Save wrote only the block after the scene; ${roomCli}; a commented block asks first`);
+    // Choosing another main script closes the old script's room editors and lists the new one's.
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(ROOMS_SRC), 'other.bespoke': b64('scene Cellar:\n  marks: Steps, Barrels\n') }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openRooms()');
+    await evaluate("window.bespokeStudio.openScene('Yard')");
+    await evaluate("window.bespokeStudio.chooseScript('other.bespoke').then(() => true)");
+    s = await state();
+    if (s.windows.includes('room:Yard') || JSON.stringify(s.rooms.scenes) !== '["Cellar"]') throw new Error(`switching scripts left ${JSON.stringify(s.windows)} ${JSON.stringify(s.rooms.scenes)}`);
+    console.log(`ok  room editor: move, undo to the script's own bytes, walkway, exit, area, each checked; Save wrote only the block after the scene; ${roomCli}; a commented block asks first; another main script closes the old one's editors`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
