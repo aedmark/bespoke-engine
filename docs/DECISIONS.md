@@ -2730,6 +2730,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** offering only the demos that play the same from their script, rejected because the maintainer asked for every demo; porting every mechanic first, deferred to Phase 50's items; example folders in the repository, rejected because the published site could not reach them.
 
+## D-214 Scripts Name Their Player, Their Props' LOOK Text, and Where a Transition Lands (2026-11-28, status: accepted; P50-14, extends D-208)
+
+**Context.** Porting the proofs into their scripts (Phase 50) found three things each deck said in Zig that no script could: who the player is (thirteen proof scripts have no routine, so `host.player_actor` finds no one, and each deck passed `.player`), a prop's LOOK text (`add_hotspot`'s examine text, shown when no handler answers), and which mark a scene change lands the player on (D-208 uses the first mark; the Bell Tower's descent lands on the stair foot). The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. `player <Name>`: a top-level line naming the player, who must be in some scene's cast. `host.start_script` returns it before the first routine's actor. It rides in a new optional `PLYR` section, which an older reader skips and falls back to the routine rule.
+2. `look <Prop>: "text"`: a top-level line giving a prop's LOOK text, which must name a scene's prop. It sets the hotspot's examine text, already carried in `PLAC`, so no format changes. A click already showed that text when no handler answered; a typed LOOK now does too, when the text differs from the prop's name.
+3. `transition to scene X at Mark`: a new opcode, `transition_scene_at` (0x45), with the mark; `host.follow_transition` places the player on that mark, even within the room. Unquoted names already swallow `at`, so codegen splits a name at its last " at " only when the whole is not a declared scene and the part before is; a scene named with "at" keeps working. An unknown mark is the `UnknownMark` error at the statement.
+
+**Consequences.** A script can be its whole game for the proofs that only needed these. A package using `at` holds an opcode a 1.2 reader rejects when it validates the code; one with a `player` line plays in a 1.2 reader with the routine rule. `look` now has two meanings, told apart by what follows the colon. No golden changed. Pinned by compiler, host, and package tests and three `d214-player-and-arrival` conformance cases.
+
+**Alternatives:** the player in a scene block, not chosen; reordering marks so the first is right, rejected because a scene entered from two sides has no single right first mark; `LooksAt` handlers for every prop, rejected as many lines for one sentence each.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

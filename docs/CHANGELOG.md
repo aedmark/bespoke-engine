@@ -4,6 +4,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Bell Tower plays the same in the Studio as in the showcase (`P50-14`): its layout, stair, player, and LOOK texts are in its script.
+
+- Scripts name their player, their props' LOOK text, and where a transition lands (`D-214`): `player Maren`; `look Stairwell: "A spiral stair up to the belfry."`, which LOOK says when no handler answers, by click or now also typed; and `transition to scene Belfry at StairTop`. The player line rides in a new optional `PLYR` package section.
+
 - The Tide Beacon plays the same in the Studio as in the showcase (`P50-22`): its layout is a room block in its script, not Zig code.
 
 - Every demo game opens in BeSpoke Studio (`P50-01` to `P50-03`, `D-213`): Project > Open example lists all 24, from The Sunken Vault to the proofs, built into the page; scenes drawn by code come with their backdrops as PNGs to paint over, and Save writes your copy into a folder. A demo whose showcase version runs Zig code says so when it opens and plays from its script alone until Phase 50 moves that code into the script. The proofs' scripts are now `.bespoke` files.

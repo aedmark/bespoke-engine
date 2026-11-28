@@ -544,6 +544,19 @@ pub const SpatialSystem = struct {
 
     /// Registers a static scene hotspot / inspectable prop (P7-01, D-009).
     /// If a hotspot for this entity already exists, updates it in-place to prevent duplication.
+    /// Replaces a hotspot's LOOK text (`look <Thing>: "text"`, D-214). False when the entity
+    /// has no hotspot.
+    pub fn set_examine_text(self: *SpatialSystem, entity: EntityId, text: []const u8) !bool {
+        for (self.hotspots.items) |*h| {
+            if (h.entity != entity) continue;
+            const copy = try self.allocator.dupe(u8, text);
+            self.allocator.free(h.examine_text);
+            h.examine_text = copy;
+            return true;
+        }
+        return false;
+    }
+
     pub fn add_hotspot(
         self: *SpatialSystem,
         entity: EntityId,

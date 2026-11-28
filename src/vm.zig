@@ -257,6 +257,8 @@ pub const VM = struct {
     /// `transition_to_scene` from Zig moves its own player, so only the opcode sets it. It is
     /// consumed after the tick that set it, so no save or snapshot needs to carry it.
     script_transition: ?EntityId = null,
+    /// The mark a `transition to scene X at Mark` named, beside `script_transition` (D-214).
+    script_transition_mark: ?EntityId = null,
     /// The run's dice (D-168, D-184). `branch_dice`, when the host binds the VM to a live
     /// branch world, points at the branch's own generator in the hypervisor, so a branch's
     /// rolls never move the present's.
@@ -1451,6 +1453,14 @@ pub const VM = struct {
                     const target_scene_val = try read_u32(code, &f.pc);
                     try self.transition_to_scene(EntityId.from_int(target_scene_val));
                     self.script_transition = EntityId.from_int(target_scene_val);
+                    self.script_transition_mark = null;
+                },
+                .transition_scene_at => {
+                    const target_scene_val = try read_u32(code, &f.pc);
+                    const mark_val = try read_u32(code, &f.pc);
+                    try self.transition_to_scene(EntityId.from_int(target_scene_val));
+                    self.script_transition = EntityId.from_int(target_scene_val);
+                    self.script_transition_mark = EntityId.from_int(mark_val);
                 },
 
                 // --- Preemption & Interruption (P2-04, D-004) ---

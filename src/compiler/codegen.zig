@@ -138,6 +138,9 @@ pub const CompiledProgram = struct {
     /// through along the chain before the search moves to a broader signature. Owned by
     /// `chunk.allocator`.
     cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty,
+    /// The script's `player` line (P50-14, D-214), or none: hosts then use the first routine's
+    /// actor. Carried in the optional `PLYR` package section.
+    player: EntityId = .none,
     /// The script's `save version N` (P48-08, D-162), 1 when it declares none.
     save_version: u32 = 1,
     /// `rewinds reroll`: a rewind restores everything but the dice (D-184).
@@ -726,6 +729,10 @@ pub const Codegen = struct {
     cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
     cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty,
+    player: EntityId = .none,
+    /// The scenes being compiled, so `transition to scene X at Mark` can tell a scene from a
+    /// scene and its mark (D-214).
+    scene_defs: []const parser_mod.SceneDef = &.{},
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -888,6 +895,7 @@ pub const Codegen = struct {
     }
 
     pub fn compile(mut_self: *Codegen, ast: *const AST) !CompiledProgram {
+        mut_self.scene_defs = ast.scene_defs.items;
         // The look names borrow AST text and are checked before compile returns, so the list
         // lives only for this call.
         defer mut_self.look_uses.deinit(mut_self.allocator);
@@ -1489,8 +1497,15 @@ pub const Codegen = struct {
         // Art last: nothing after it can fail, so the owned copy never needs an errdefer here
         // (P46-03, D-155). Bindings name their scene or entity by text; interning finds the
         // entity the scene, cast, or props line already made.
+        // A prop's LOOK text replaces the name its hotspot was given (D-214); the parser has
+        // checked every one names a scene's prop.
+        if (mut_self.spatial) |sp| for (ast.look_texts.items) |lt| {
+            if (mut_self.world.lookup_entity(lt.entity)) |ent| _ = try sp.set_examine_text(ent, lt.text);
+        };
+        const player: EntityId = if (ast.player) |p| mut_self.world.lookup_entity(p.entity) orelse .none else .none;
         const art = try mut_self.compile_art(&ast.art);
         return CompiledProgram{
+            .player = player,
             .chunk = mut_self.chunk,
             .routine_entries = mut_self.routine_entries,
             .routine_entities = mut_self.routine_entities,
@@ -2469,8 +2484,29 @@ fn check_loop_u16(span: usize) error{JumpOffsetTooLarge}!u16 {
                 try self.chunk.emit_u8(2); // 2 args (target, clip)
             },
             .transition_scene => |ts| {
-                const scene_ent = try self.resolve_entity(ts.target_scene);
-                try self.chunk.emit_transition_scene(scene_ent);
+                // `at Mark` after a quoted scene arrives as `mark`; after an unquoted one the
+                // words are in the name, so a name that is not a scene is split at its last
+                // " at " when the part before is one (D-214).
+                var scene_name = ts.target_scene;
+                var mark_name = ts.mark;
+                if (mark_name == null and !self.is_scene(scene_name)) {
+                    if (std.mem.lastIndexOf(u8, scene_name, " at ")) |cut| {
+                        if (self.is_scene(scene_name[0..cut])) {
+                            mark_name = scene_name[cut + 4 ..];
+                            scene_name = scene_name[0..cut];
+                        }
+                    }
+                }
+                const scene_ent = try self.resolve_entity(scene_name);
+                if (mark_name) |m| {
+                    if (!self.scene_has_mark(scene_name, m)) {
+                        self.error_context = m;
+                        self.error_line = ts.line;
+                        self.error_column = ts.col;
+                        return error.UnknownMark;
+                    }
+                    try self.chunk.emit_transition_scene_at(scene_ent, try self.resolve_entity(m));
+                } else try self.chunk.emit_transition_scene(scene_ent);
             },
             .play_score => |name| {
                 // `PlayingScore` is a property of `Music`, so playing replaces the previous
@@ -2674,6 +2710,19 @@ fn check_loop_u16(span: usize) error{JumpOffsetTooLarge}!u16 {
     /// A name of a thing used as a constant. A lowercase name is a variable (D-161): one this
     /// body can read is refused here, where no value can stand in for it; any other is not
     /// bound at all, and the help offers the capitalised name the author probably meant.
+    fn is_scene(self: *const Codegen, name: []const u8) bool {
+        for (self.scene_defs) |sc| if (std.mem.eql(u8, sc.name, name)) return true;
+        return false;
+    }
+
+    fn scene_has_mark(self: *const Codegen, scene: []const u8, mark: []const u8) bool {
+        for (self.scene_defs) |sc| {
+            if (!std.mem.eql(u8, sc.name, scene)) continue;
+            for (sc.marks.items) |m| if (std.mem.eql(u8, m, mark)) return true;
+        }
+        return false;
+    }
+
     fn resolve_entity(self: *Codegen, name: []const u8) !EntityId {
         if (is_variable_name(name)) {
             self.error_context = name;

@@ -27,6 +27,7 @@ A package is a 16-byte header (magic, format, a CRC32 of the payload, and the pa
 | `TEXT` | display names and phrase overrides (D-179) |
 | `CYCL` | optional (`flags = 0`): palette colour cycles (P49-01, D-190); 1.0 readers skip it and render static QOI art |
 | `EXIT` | required: a script's room-block exits (P47-11, D-199); a reader without it refuses the package by name rather than play a game with its doors shut. Written only when a script declares exits, so every earlier package is unchanged |
+| `PLYR` | optional (`flags = 0`): the script's `player` line (P50-14, D-214); a reader without it skips it and takes the first routine's actor. Written only when a script names its player |
 
 - A package writes only the sections its program uses; `NAME` and `CODE` are always present. Every 1.0 section is required.
 - A reader refuses a package with an unknown required section (`UnknownRequiredSection`) and skips an unknown optional one, so a later 1.x adds what it needs as a new section, optional where an older reader may safely ignore it, without a new format.

@@ -650,10 +650,6 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
         _ = try weathercock.Layout.init(world, spatial);
         return;
     }
-    if (std.mem.eql(u8, name, "bell_tower")) {
-        _ = try bell_tower.configure(world, spatial);
-        return;
-    }
     if (std.mem.eql(u8, name, "grog_puzzle")) {
         _ = try grog_puzzle.configure(world, spatial);
         return;

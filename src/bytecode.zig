@@ -77,6 +77,9 @@ pub const Opcode = enum(u8) {
     /// Transitions simulation to target scene entity and emits the SceneTransition cue; fibers keep running (P12-01, D-139).
     /// Operand: target_scene: u32 (EntityId).
     transition_scene = 0x44,
+    /// As `transition_scene`, naming the mark the player arrives on (P50-14, D-214).
+    /// Operands: target_scene: u32, mark: u32 (both EntityId).
+    transition_scene_at = 0x45,
 
     // --- Interruption Primitives (D-004) ---
     /// Preempts target entity's active routine, pushing an interrupt frame.
@@ -183,6 +186,7 @@ pub fn validate(code: []const u8) ValidationError!void {
             .push_local, .forget, .query_has => try skip_bytes(code, &pc, 1),
             .push_relation => try skip_bytes(code, &pc, 2),
             .push_const, .push_entity, .remember, .transition_scene => try skip_bytes(code, &pc, 4),
+            .transition_scene_at => try skip_bytes(code, &pc, 8),
             .query_count, .query_points => try skip_bytes(code, &pc, 5),
             .roll_dice => {
                 if (code.len - pc < 2) return error.TruncatedBytecode;
@@ -342,6 +346,12 @@ pub const BytecodeChunk = struct {
     pub fn emit_transition_scene(self: *BytecodeChunk, scene_id: EntityId) !void {
         _ = try self.emit_op(.transition_scene);
         try self.emit_u32(scene_id.to_int());
+    }
+
+    pub fn emit_transition_scene_at(self: *BytecodeChunk, scene_id: EntityId, mark: EntityId) !void {
+        _ = try self.emit_op(.transition_scene_at);
+        try self.emit_u32(scene_id.to_int());
+        try self.emit_u32(mark.to_int());
     }
 
     /// Returns the opcode pc; the u16 body operand sits at `pc + 5` for patching.

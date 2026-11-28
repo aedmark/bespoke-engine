@@ -156,9 +156,7 @@ pub const decks = [_]wasm.Deck{
         .theme = &art.theme,
         .status_hook = art.capture_status,
         .background = .{ .r = 24, .g = 28, .b = 46 },
-        .setup = bell_tower_setup,
         .catalyst = solver(&BELL_TOWER_SOLUTION),
-        .after_tick = bell_tower_follow_scene,
         .cues = .{ .take = "PicksUp" },
     }),
     wasm.script_deck_with("THE CASTLE FIRE ESCAPE (FIRE, SMOKE, WATER)", grid_puzzle.GRID_PUZZLE_SCRIPT, .{
@@ -670,25 +668,6 @@ fn weathercock_after_tick(rt: *WasmRuntime) anyerror!void {
 }
 
 /// The desktop proof's tower layout, with Maren at the doorway of the base.
-fn bell_tower_setup(rt: *WasmRuntime) anyerror!void {
-    const ids = try bell_tower.configure(&rt.world, &rt.spatial);
-    try rt.vm.transition_to_scene(ids.base);
-    bell_tower_scene = ids.base;
-}
-
-/// The scene the Bell Tower deck last showed. The script changes scenes itself; as on desktop,
-/// Maren follows to the stair at the other end.
-var bell_tower_scene: EntityId = .none;
-
-fn bell_tower_follow_scene(rt: *WasmRuntime) anyerror!void {
-    const now = rt.vm.current_scene orelse return;
-    if (now == bell_tower_scene) return;
-    bell_tower_scene = now;
-    const maren = try entity(rt, "Maren");
-    const mark = if (std.mem.eql(u8, rt.world.get_entity_name(now) orelse "", bell_tower.BELFRY_SCENE)) "StairTop" else "StairFoot";
-    _ = try rt.spatial.transition_actor(maren, now, rt.spatial.graph.find_waypoint_in_room(now, mark));
-}
-
 fn beard_setup(rt: *WasmRuntime) anyerror!void {
     // The desktop's mark layout, cast places, and office lane (D-100).
     try borrowed_beard.stage(&rt.world, &rt.spatial, true);

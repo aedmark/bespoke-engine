@@ -98,6 +98,9 @@ pub const Section = enum(u8) {
     /// A script's room-block exits (P47-11, D-199). Required: a reader without it would play
     /// the game with its doorways shut, so it refuses the package by name instead.
     exits,
+    /// The script's `player` line (P50-14, D-214). Optional: a reader without it falls back to
+    /// the first routine's actor, as for every script before 1.3.
+    player,
 
     pub fn tag(self: Section) [4]u8 {
         return SECTION_TAGS[@intFromEnum(self)];
@@ -107,7 +110,7 @@ pub const Section = enum(u8) {
     /// skip it and draw static QOI art (P49-01, D-190).
     pub fn flags(self: Section) u8 {
         return switch (self) {
-            .cycles => 0,
+            .cycles, .player => 0,
             else => SECTION_REQUIRED,
         };
     }
@@ -122,7 +125,7 @@ pub const SECTION_TAGS = [_][4]u8{
     "NAME".*, "PLAC".*, "CODE".*, "RULE".*, "DRFT".*, "SOCI".*, "DUEL".*, "DGRD".*,
     "GRID".*, "AGND".*, "CMND".*, "SCOR".*, "CAST".*, "GURD".*, "GOAL".*, "SPEL".*,
     "DCSN".*, "AXIS".*, "REDL".*, "DLMA".*, "IMGS".*, "ARTB".*, "TEXT".*, "CYCL".*,
-    "EXIT".*,
+    "EXIT".*, "PLYR".*,
 };
 
 comptime {
@@ -1894,6 +1897,7 @@ fn write_section(allocator: std.mem.Allocator, comptime which: Section, w: anyty
         },
         .cycles => return used(compiled.art.cycles.len) and try done(write_art_cycles(w, compiled.art)),
         .exits => return used(compiled.exits.items.len) and try done(write_exits(w, compiled.exits.items)),
+        .player => return compiled.player != .none and try done(w.writeInt(u32, compiled.player.to_int(), .little)),
     }
 }
 
@@ -2573,6 +2577,14 @@ pub fn load_package_linked(
         exits = try read_exits(allocator, &stream, world, spatial);
         try finish(&stream);
     };
+    var player: EntityId = .none;
+    if (comptime linked.contains(.player)) if (table.get(.player)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        player = EntityId.from_int(try stream.takeInt(u32, .little));
+        // Untrusted: the player must be an entity the package named.
+        if (world.get_entity_name(player) == null) return error.InvalidPlayer;
+        try finish(&stream);
+    };
 
     return CompiledProgram{
         .drafts = drafts,
@@ -2608,6 +2620,7 @@ pub fn load_package_linked(
         .fingerprint = fingerprint,
         .art = art,
         .exits = exits,
+        .player = player,
     };
 }
 
@@ -3232,6 +3245,67 @@ test "D-199: room exits round-trip in a required EXIT section that a reader with
         var stream: std.Io.Reader = .fixed(bytes.written());
         const without = comptime ALL_SECTIONS.differenceWith(SectionSet.initOne(.exits));
         try testing.expectError(error.UnlinkedSection, load_package_linked(without, testing.allocator, &stream, &w3, null));
+    }
+}
+
+test "D-214: the player rides in an optional PLYR section that older readers skip" {
+    const testing = std.testing;
+    const script =
+        \\scene: Base
+        \\cast: Guard, Maren
+        \\marks: Doorway
+        \\player Maren
+        \\routine Pace(Guard):
+        \\  wait 1 ticks
+    ;
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    try package_of(testing.allocator, script, &bytes);
+    const payload = bytes.items[@sizeOf(PackageHeader)..];
+    const table = try read_section_table(payload);
+    const plyr = table.get(.player).?;
+    const header_at = @intFromPtr(plyr.ptr) - @intFromPtr(bytes.items.ptr) - SECTION_HEADER_LEN;
+    try testing.expectEqualStrings("PLYR", bytes.items[header_at..][0..4]);
+    try testing.expectEqual(@as(u8, 0), bytes.items[header_at + 4]);
+    {
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var stream: std.Io.Reader = .fixed(bytes.items);
+        var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+        defer loaded.deinit();
+        // The player line wins over the first routine's actor, the Guard.
+        try testing.expectEqual(world.lookup_entity("Maren").?, loaded.player);
+    }
+    {
+        // A reader that does not know PLYR skips it and falls back to the routine's actor.
+        const unknown = try testing.allocator.dupe(u8, bytes.items);
+        defer testing.allocator.free(unknown);
+        @memcpy(unknown[header_at..][0..4], "PLY9");
+        reseal_for_test(unknown);
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var stream: std.Io.Reader = .fixed(unknown);
+        var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+        defer loaded.deinit();
+        try testing.expectEqual(EntityId.none, loaded.player);
+    }
+    {
+        // An entity id the package never named is refused.
+        const bad = try testing.allocator.dupe(u8, bytes.items);
+        defer testing.allocator.free(bad);
+        const at = @intFromPtr(plyr.ptr) - @intFromPtr(bytes.items.ptr);
+        std.mem.writeInt(u32, bad[at..][0..4], 0xFFFF, .little);
+        reseal_for_test(bad);
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidPlayer, load_package(testing.allocator, &stream, &world, &spatial));
     }
 }
 

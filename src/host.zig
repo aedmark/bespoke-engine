@@ -418,8 +418,24 @@ pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: Entity
     }
     if (!reply.fired and !reply.walking) {
         reply.text = phrase_mod.text(world, if (blocked) .cannot_get_there else .nothing_happens);
+        // LOOK at a prop no handler answers says its LOOK text, as a click does (D-214).
+        if (std.mem.eql(u8, command.cue, "LooksAt")) if (look_text(vm, command.a)) |text| {
+            reply.text = text;
+        };
     }
     return reply;
+}
+
+/// A prop's own LOOK text (`look <Thing>: "text"`), or null when it has only its name.
+fn look_text(vm: *VM, thing: ?EntityId) ?[]const u8 {
+    const sp = vm.spatial orelse return null;
+    const target = thing orelse return null;
+    for (sp.hotspots.items) |hs| {
+        if (hs.entity != target) continue;
+        if (std.mem.eql(u8, hs.examine_text, hs.name)) return null;
+        return hs.examine_text;
+    }
+    return null;
 }
 
 /// Fills `out` with the words the command bar may complete for `actor`: frame words and the
@@ -682,6 +698,9 @@ pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *
     // A top-level `transition` picks the room the game opens on; the cast lists have already
     // placed everyone, so the player is not carried there (D-208).
     vm.script_transition = null;
+    vm.script_transition_mark = null;
+    // A script's own `player` line comes first (D-214), then the first routine's actor.
+    if (compiled.player != .none) return compiled.player;
     return world.intern_entity(player_actor(compiled) orelse "Player");
 }
 
@@ -998,9 +1017,18 @@ pub fn take_exit_here(world: *const World, spatial: *SpatialSystem, vm: *VM, exi
 /// Returns true when the player moved. Call after every tick, beside the exit check.
 pub fn follow_transition(vm: *VM, spatial: *SpatialSystem, player: EntityId) !bool {
     const scene = vm.script_transition orelse return false;
+    const mark = vm.script_transition_mark;
     vm.script_transition = null;
+    vm.script_transition_mark = null;
     if (player == .none) return false;
     const wp = spatial.get_current_waypoint(player) orelse return false;
+    // `at Mark` names the arrival point (D-214): the player goes there even within the room.
+    if (mark) |m| {
+        const name = vm.world.get_entity_name(m) orelse return false;
+        const target = spatial.graph.find_waypoint_in_room(scene, name) orelse return false;
+        if (target == wp) return false;
+        return spatial.transition_actor(player, scene, target);
+    }
     const here = (spatial.graph.get_waypoint(wp) orelse return false).room;
     if (here == scene) return false;
     if (spatial.graph.get_first_waypoint_in_room(scene) == null) return false;

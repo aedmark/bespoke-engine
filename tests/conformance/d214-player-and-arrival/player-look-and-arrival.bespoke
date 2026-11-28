@@ -1,0 +1,32 @@
+# A script names its player, gives a prop LOOK text, and says where a transition lands.
+# pins: D-214
+# ticks: 8
+# input: 0 look at stairwell
+# input: 1 use stairwell
+# input: 3 use rope
+# input: 5 use stairwell
+# expect line: A spiral stair up to the belfry.
+# expect line: Maren: "Down again."
+# expect fact: Rang(Maren)
+
+scene: Base
+cast: Maren
+props: Stairwell
+marks: Doorway, StairFoot
+
+scene: Belfry
+props: Rope
+marks: StairTop, Loft
+
+relation Rang(who)
+
+player Maren
+look Stairwell: "A spiral stair up to the belfry."
+
+on cue Uses(Maren, Stairwell):
+  transition to scene Belfry at StairTop
+
+on cue Uses(Maren, Rope):
+  remember Rang(Maren)
+  say Maren: "Down again."
+  transition to scene Base at StairFoot

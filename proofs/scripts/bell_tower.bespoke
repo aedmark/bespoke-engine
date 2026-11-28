@@ -8,6 +8,44 @@ cast: Maren
 props: IronChain, TuningFork, GreatBell, Beacon
 marks: StairTop, ChainMark, BellMark, BeaconMark
 
+# The tower's layout in art pixels (P50-14): the base's walk from the door to the stair foot,
+# and the belfry's from the stair top, which leads back down.
+room Bell Tower Base:
+  mark Doorway at 78 112
+  mark BrazierMark at 128 112
+  mark IvyMark at 177 112
+  mark StairFoot at 231 106
+  prop Lantern at 87 76
+  prop Brazier at 128 91
+  prop Ivy at 177 70
+  prop Stairwell at 231 76
+
+room Bell Tower Belfry:
+  mark StairTop at 78 112
+  mark ChainMark at 132 112
+  mark BellMark at 164 106
+  mark BeaconMark at 231 106
+  prop IronChain at 141 88
+  prop TuningFork at 114 103
+  prop GreatBell at 164 64
+  prop Beacon at 231 70
+  exit StairTop to Bell Tower Base at StairFoot
+
+player Maren
+transition to scene Bell Tower Base
+
+name IronChain: "Iron Chain"
+name TuningFork: "Tuning Fork"
+name GreatBell: "Great Bell"
+look Lantern: "An iron lantern hanging by the door, its flame guttering in the draught."
+look Brazier: "An iron brazier heaped with coals."
+look Ivy: "Ivy coiled around the old iron gate."
+look Stairwell: "A spiral stair up to the belfry."
+look IronChain: "A heavy chain wound around the bell's clapper."
+look TuningFork: "A glint of bronze on the boards."
+look GreatBell: "The great bronze bell of the tower."
+look Beacon: "A beacon basket on the parapet."
+
 relation Knows(knower, draft)
 relation Carries(holder, item)
 property DistaffReach(holder, notes)
@@ -43,7 +81,7 @@ on cue Uses(Maren, Stairwell):
     say Maren: "It is too dark to climb."
   if Brazier is lit:
     say Maren: "I climb toward the bells by firelight."
-    transition to scene: Bell Tower Belfry
+    transition to scene: Bell Tower Belfry at StairTop
 
 on cue Weave(Maren, Kindle, Brazier):
   if Brazier is lit:

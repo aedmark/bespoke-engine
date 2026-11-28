@@ -468,6 +468,28 @@ routine Stroll(Hero):
 - A walk that ends on an exit mark moves the player to the other scene. Here the Hero walks to the Well and arrives in the Hall at the Door; walking to the Door again leads back.
 - The Studio's room editor (P47-03) rewrites a room block whole, so comments inside one do not survive an edit there.
 
+Three lines say who plays and what they find (D-214):
+
+```bespoke
+scene Base:
+  cast: Maren
+  props: Stairwell
+  marks: Doorway, StairFoot
+
+scene Belfry:
+  marks: StairTop, Loft
+
+player Maren
+look Stairwell: "A spiral stair up to the belfry."
+
+on cue Uses(Maren, Stairwell):
+  transition to scene Belfry at StairTop
+```
+
+- `player Maren` names the actor clicks and typed commands act for. Without it the player is the actor of the first routine. The player must be in some scene's cast.
+- `look <Prop>: "text"` is what LOOK says of a prop when no `LooksAt` handler answers, by click or typed. The prop must be in some scene's `props:` line. (`look <Name>: <Image>`, with an image after the colon, is an appearance; see Pixel art.)
+- `transition to scene X at Mark` places the player on that mark of X after the tick, rather than X's first mark (D-208), and moves them there even when they are already in X.
+
 ### Pixel art
 
 A script can carry its own art (P46-03 to P46-05). Put the PNG files beside the script and name them; a backdrop draws a scene, a sprite draws a person or prop standing on its spot, and an area makes something painted on the backdrop clickable:

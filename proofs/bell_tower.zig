@@ -46,9 +46,9 @@ pub const Ids = struct {
     beacon_wp: u16,
 };
 
-/// Lays out both scenes after compilation: waypoint positions, corridors, hotspots, and Maren.
+/// Resolves both scenes' handles after compilation and places the cast; the script lays them out.
 /// Shared by the headless and interactive runs so both exercise one topology.
-pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem, compiled: *const bespoke.CompiledProgram) !Ids {
     const base = world.lookup_entity(BASE_SCENE).?;
     const belfry = world.lookup_entity(BELFRY_SCENE).?;
     const ids = Ids{
@@ -74,33 +74,9 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .beacon_wp = spatial.graph.find_waypoint_in_room(belfry, "BeaconMark").?,
     };
 
-    host.place_waypoint(spatial, ids.doorway_wp, 2, 6);
-    host.place_waypoint(spatial, ids.brazier_wp, 13, 6);
-    host.place_waypoint(spatial, ids.ivy_wp, 24, 6);
-    host.place_waypoint(spatial, ids.stair_foot_wp, 36, 4);
-    host.place_waypoint(spatial, ids.stair_top_wp, 2, 6);
-    host.place_waypoint(spatial, ids.chain_wp, 14, 6);
-    host.place_waypoint(spatial, ids.bell_wp, 21, 4);
-    host.place_waypoint(spatial, ids.beacon_wp, 36, 4);
-
-    spatial.graph.edges.clearRetainingCapacity();
-    try spatial.graph.connect(ids.doorway_wp, ids.brazier_wp, null);
-    try spatial.graph.connect(ids.brazier_wp, ids.ivy_wp, null);
-    try spatial.graph.connect(ids.ivy_wp, ids.stair_foot_wp, null);
-    try spatial.graph.connect(ids.stair_top_wp, ids.chain_wp, null);
-    try spatial.graph.connect(ids.chain_wp, ids.bell_wp, null);
-    try spatial.graph.connect(ids.bell_wp, ids.beacon_wp, null);
-
-    try spatial.add_hotspot(ids.lantern, base, .{ .x = 4, .y = -6 }, 6, "Lantern", "An iron lantern hanging by the door, its flame guttering in the draught.");
-    try spatial.add_hotspot(ids.brazier, base, .{ .x = 13, .y = -1 }, 7, "Brazier", "An iron brazier heaped with coals.");
-    try spatial.add_hotspot(ids.ivy, base, .{ .x = 24, .y = -8 }, 7, "Ivy", "Ivy coiled around the old iron gate.");
-    try spatial.add_hotspot(ids.stairwell, base, .{ .x = 36, .y = -6 }, 7, "Stairwell", "A spiral stair up to the belfry.");
-    try spatial.add_hotspot(ids.chain, belfry, .{ .x = 16, .y = -2 }, 6, "Iron Chain", "A heavy chain wound around the bell's clapper.");
-    try spatial.add_hotspot(ids.fork, belfry, .{ .x = 10, .y = 3 }, 5, "Tuning Fork", "A glint of bronze on the boards.");
-    try spatial.add_hotspot(ids.bell, belfry, .{ .x = 21, .y = -10 }, 9, "Great Bell", "The great bronze bell of the tower.");
-    try spatial.add_hotspot(ids.beacon, belfry, .{ .x = 36, .y = -8 }, 7, "Beacon", "A beacon basket on the parapet.");
-
-    try spatial.register_entity(ids.maren, ids.doorway_wp, 10);
+    // The layout, LOOK texts, and the stair down are the script's room blocks (P50-14); the
+    // cast starts as every host starts it.
+    try host.place_cast(spatial, compiled);
     return ids;
 }
 
@@ -195,7 +171,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("[Compiler] Compiling Bell Tower script with drafts Kindle, Bind, Toll...\n", .{});
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, BELL_TOWER_SCRIPT);
     defer compiled.deinit();
-    const ids = try configure(&world, &spatial);
+    const ids = try configure(&world, &spatial, &compiled);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -328,7 +304,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
     defer spatial.deinit();
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, BELL_TOWER_SCRIPT);
     defer compiled.deinit();
-    const ids = try configure(&world, &spatial);
+    const ids = try configure(&world, &spatial, &compiled);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -484,7 +460,7 @@ test "P22-03: drafts weave only where the script allows" {
     defer spatial.deinit();
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, BELL_TOWER_SCRIPT);
     defer compiled.deinit();
-    const ids = try configure(&world, &spatial);
+    const ids = try configure(&world, &spatial, &compiled);
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;

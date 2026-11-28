@@ -104,6 +104,13 @@ pub const Stmt = union(enum) {
     },
     transition_scene: struct {
         target_scene: []const u8,
+        /// `transition to scene X at Mark` (P50-14, D-214): where the player arrives. An
+        /// unquoted name keeps `at Mark` in `target_scene`; codegen splits it when the whole
+        /// text is not a scene, so a scene named with "at" still works.
+        mark: ?[]const u8 = null,
+        /// The statement's line, for an unknown mark (an unquoted name is not a source slice).
+        line: u32 = 0,
+        col: u32 = 0,
     },
     choice_block: []const DialogueChoice,
     resume_stmt: void,
@@ -698,6 +705,10 @@ pub const AST = struct {
     turn_clock: ?bool = null,
     /// `name <Thing>: "<text>"` lines (P48-09, D-179).
     display_names: std.ArrayListUnmanaged(NameDecl) = .empty,
+    /// `look <Thing>: "text"` (P50-14, D-214): what LOOK says of a prop no handler answers.
+    look_texts: std.ArrayListUnmanaged(NameDecl) = .empty,
+    /// `player <Name>` (P50-14, D-214): the actor clicks and typed commands act for.
+    player: ?NameDecl = null,
     /// `phrase <Key>: "<text>"` lines (P48-09, D-179), already checked against the phrase table.
     phrases: std.ArrayListUnmanaged(PhraseDecl) = .empty,
     entities: std.array_list.Managed([]const u8),
@@ -765,6 +776,7 @@ pub const AST = struct {
 
     pub fn deinit(self: *AST) void {
         self.display_names.deinit(self.allocator);
+        self.look_texts.deinit(self.allocator);
         self.phrases.deinit(self.allocator);
         self.entities.deinit();
         self.relations.deinit();
@@ -879,6 +891,13 @@ pub const Parser = struct {
         return error.UnexpectedToken;
     }
 
+    /// An error at the start of a line recorded earlier, for checks made after parsing.
+    fn error_line(self: *Parser, line: u32, comptime fmt: []const u8, args: anytype) error{UnexpectedToken} {
+        const msg = std.fmt.bufPrint(&self.diag_buf, fmt, args) catch "syntax error";
+        self.diagnostic = .{ .line = line, .column = 1, .message = msg };
+        return error.UnexpectedToken;
+    }
+
     fn record_error(self: *Parser, tok: Token, comptime fmt: []const u8, args: anytype) void {
         const msg = std.fmt.bufPrint(&self.diag_buf, fmt, args) catch "syntax error";
         self.diagnostic = .{
@@ -956,6 +975,16 @@ pub const Parser = struct {
         self.suggestion = hints.result();
     }
 
+    /// `at <Mark>` after a quoted scene name in `transition to scene` (D-214). After an
+    /// unquoted name the words are already part of it; codegen splits them.
+    fn transition_mark(self: *Parser) !?[]const u8 {
+        if (self.current.tag != .identifier or !std.mem.eql(u8, self.current.slice, "at")) return null;
+        const at = self.current;
+        try self.advance();
+        if (self.current.line != at.line) return self.error_at(at, "'at' after a scene names the mark the player arrives on", .{});
+        return try self.parse_name();
+    }
+
     fn parse_name(self: *Parser) ![]const u8 {
         // A quoted name is taken whole, so it may hold characters a word cannot, such as the
         // apostrophe in "Keeper's Lodge" (D-101). Unquoted names are unchanged.
@@ -1013,12 +1042,14 @@ pub const Parser = struct {
                     if (stmt == .remember) try self.initial_fact_lines.append(self.allocator, .{ .relation = stmt.remember.relation, .args = stmt.remember.args, .line = remember_line });
                 },
                 .kw_transition => {
+                    const transition_line: u32 = @intCast(self.current.line);
+                    const transition_col: u32 = @intCast(self.current.col);
                     try self.advance(); // consume 'transition'
                     _ = try self.expect(.kw_to);
                     _ = try self.expect(.kw_scene);
                     if (self.current.tag == .colon) try self.advance();
                     const target_scene = try self.parse_name();
-                    try ast.initial_stmts.append(.{ .transition_scene = .{ .target_scene = target_scene } });
+                    try ast.initial_stmts.append(.{ .transition_scene = .{ .target_scene = target_scene, .mark = try self.transition_mark(), .line = transition_line, .col = transition_col } });
                 },
                 .kw_choice => {
                     var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);
@@ -1476,6 +1507,15 @@ pub const Parser = struct {
                         try ast.display_names.append(self.allocator, .{ .entity = entity, .text = text, .line = @intCast(start.line) });
                         continue;
                     }
+                    // `player <Name>` (P50-14, D-214), matched like `name`, so `player` stays a usable name.
+                    if (std.mem.eql(u8, start.slice, "player") and self.current.line == start.line and
+                        (self.current.tag == .identifier or self.current.tag == .string_literal))
+                    {
+                        const who = try self.parse_name();
+                        if (ast.player != null) return self.error_at(start, "the player is named twice", .{});
+                        ast.player = .{ .entity = who, .text = "", .line = @intCast(start.line) };
+                        continue;
+                    }
                     if (std.mem.eql(u8, start.slice, "phrase") and self.current.line == start.line and self.current.tag == .identifier) {
                         const key_tok = self.current;
                         try self.advance();
@@ -1638,6 +1678,7 @@ pub const Parser = struct {
         }
 
         try self.check_limits();
+        try self.check_player_and_looks(&ast);
         try self.resolve_art(&ast);
         try self.resolve_rooms(&ast);
         try self.expand_talks(&ast);
@@ -3026,7 +3067,7 @@ pub const Parser = struct {
             return true;
         }
         if (std.mem.eql(u8, word, "look") and named) {
-            try self.parse_look();
+            try self.parse_look(ast, start);
             return true;
         }
         if (std.mem.eql(u8, word, "part") and named) {
@@ -3278,11 +3319,21 @@ pub const Parser = struct {
     }
 
     /// `look <Name>: <Image>` and its animations (P48-11, D-181).
-    fn parse_look(self: *Parser) !void {
+    fn parse_look(self: *Parser, ast: *AST, start: Token) !void {
         const at = self.current;
         const name = try self.parse_name();
         if (self.current.tag != .colon) return self.error_at(self.current, "look '{s}' expects ':' and the image it shows", .{name});
         try self.advance();
+        // `look <Thing>: "text"` is a prop's LOOK text, not an appearance (P50-14, D-214).
+        if (self.current.tag == .string_literal) {
+            const text = (try self.expect(.string_literal)).slice;
+            if (text.len == 0) return self.error_at(at, "'{s}' needs words for LOOK to say, such as look {s}: \"...\"", .{ name, name });
+            for (ast.look_texts.items) |prior| {
+                if (std.mem.eql(u8, prior.entity, name)) return self.error_at(at, "LOOK text for '{s}' is given twice", .{name});
+            }
+            try ast.look_texts.append(self.allocator, .{ .entity = name, .text = text, .line = @intCast(start.line) });
+            return;
+        }
         var src = LookSource{ .name = name, .at = at, .image = try self.take_image_name() };
         src.animations = try self.parse_animations("look", name);
         for (self.look_srcs.items) |prior| {
@@ -3369,6 +3420,24 @@ pub const Parser = struct {
 
     /// Every counted item against its limit, in source order of the items, so the first one
     /// past a limit is the one named.
+    /// The player is in some scene's cast, and LOOK text belongs to some scene's prop (D-214).
+    fn check_player_and_looks(self: *Parser, ast: *const AST) !void {
+        if (ast.player) |p| {
+            if (!listed_in(ast, p.entity, .cast)) return self.error_line(p.line, "player '{s}' is in no scene's cast", .{p.entity});
+        }
+        for (ast.look_texts.items) |lt| {
+            if (!listed_in(ast, lt.entity, .props)) return self.error_line(lt.line, "LOOK text names '{s}', which is no scene's prop", .{lt.entity});
+        }
+    }
+
+    fn listed_in(ast: *const AST, name: []const u8, comptime which: enum { cast, props }) bool {
+        for (ast.scene_defs.items) |sc| {
+            const list = if (which == .cast) sc.cast.items else sc.props.items;
+            for (list) |c| if (std.mem.eql(u8, c, name)) return true;
+        }
+        return false;
+    }
+
     fn check_limits(self: *Parser) !void {
         var limits = limits_mod.Limits{};
         for (self.limit_lines.items) |line| limits.values[@intFromEnum(line.kind)] = line.value;
@@ -3819,12 +3888,14 @@ pub const Parser = struct {
                     try list.append(try self.parse_now_stmt());
                 },
                 .kw_transition => {
+                    const transition_line: u32 = @intCast(self.current.line);
+                    const transition_col: u32 = @intCast(self.current.col);
                     try self.advance(); // consume 'transition'
                     _ = try self.expect(.kw_to);
                     _ = try self.expect(.kw_scene);
                     if (self.current.tag == .colon) try self.advance();
                     const target_scene = try self.parse_name();
-                    try list.append(.{ .transition_scene = .{ .target_scene = target_scene } });
+                    try list.append(.{ .transition_scene = .{ .target_scene = target_scene, .mark = try self.transition_mark(), .line = transition_line, .col = transition_col } });
                 },
                 .kw_choice => {
                     var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);

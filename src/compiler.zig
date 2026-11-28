@@ -1,4 +1,5 @@
 const std = @import("std");
+const bytecode_mod = @import("bytecode.zig");
 pub const lexer = @import("compiler/lexer.zig");
 pub const parser = @import("compiler/parser.zig");
 pub const codegen = @import("compiler/codegen.zig");
@@ -916,6 +917,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.MissingCueArguments => "a cue handler's arguments were read outside the handler",
         error.UnreachableCueHandler => "this handler can never run: an earlier handler has the same signature and no guard",
         error.UnknownArrivalMark => "this arrival rule needs a declared mark",
+        error.UnknownMark => "this transition's 'at' names no mark of that scene",
         error.InvalidProgramText => "could not store this declaration's text",
         error.UnknownSocietyMember => "no society member has this name",
         error.SocietyNeedsSpatialSystem => "this society needs a spatial system",
@@ -1767,6 +1769,68 @@ test "P48-08: a relation's object kind is inferred, and using it both ways is re
     try testing.expectEqualStrings("MixedRelationObject", mixed.kind());
     try testing.expectEqual(@as(u32, 4), mixed.diagnostic().?.line);
     try testing.expectEqual(@as(u32, 18), mixed.diagnostic().?.column);
+}
+
+test "D-214: player, LOOK text, and transition at a mark compile, and their mistakes are named" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compile_source(testing.allocator, &world, &spatial,
+        \\scene: Base
+        \\cast: Maren
+        \\props: Stairwell, Lantern
+        \\marks: Doorway, StairFoot
+        \\scene "Meet at Dawn":
+        \\  marks: Gate
+        \\scene: Belfry
+        \\props: Bell
+        \\marks: StairTop, BellMark
+        \\player Maren
+        \\look Stairwell: "A spiral stair up to the belfry."
+        \\on cue Uses(Maren, Stairwell):
+        \\  transition to scene Belfry at StairTop
+        \\on cue Uses(Maren, Bell):
+        \\  transition to scene "Base" at StairFoot
+        \\on cue Uses(Maren, Lantern):
+        \\  transition to scene Meet at Dawn
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(world.lookup_entity("Maren").?, compiled.player);
+    for (spatial.hotspots.items) |hs| {
+        const name = world.get_entity_name(hs.entity).?;
+        if (std.mem.eql(u8, name, "Stairwell")) try testing.expectEqualStrings("A spiral stair up to the belfry.", hs.examine_text);
+        if (std.mem.eql(u8, name, "Lantern")) try testing.expectEqualStrings("Lantern", hs.examine_text);
+    }
+    // Two transitions name a mark; the scene whose name holds "at" is still one scene.
+    const code = compiled.chunk.code.items;
+    const op_at = [_]u8{@intFromEnum(bytecode_mod.Opcode.transition_scene_at)};
+    const op_plain = [_]u8{@intFromEnum(bytecode_mod.Opcode.transition_scene)};
+    const id = struct {
+        fn bytes(w: *World, name: []const u8) [4]u8 {
+            var b: [4]u8 = undefined;
+            std.mem.writeInt(u32, &b, w.lookup_entity(name).?.to_int(), .little);
+            return b;
+        }
+    }.bytes;
+    try testing.expect(std.mem.indexOf(u8, code, &(op_at ++ id(&world, "Belfry") ++ id(&world, "StairTop"))) != null);
+    try testing.expect(std.mem.indexOf(u8, code, &(op_at ++ id(&world, "Base") ++ id(&world, "StairFoot"))) != null);
+    try testing.expect(std.mem.indexOf(u8, code, &(op_plain ++ id(&world, "Meet at Dawn"))) != null);
+
+    const cases = [_]struct { script: []const u8, line: u32, kind: []const u8 }{
+        .{ .script = "scene: Yard\ncast: Hero\nmarks: Gate\nplayer Ghost\n", .line = 4, .kind = "UnexpectedToken" },
+        .{ .script = "scene: Yard\ncast: Hero\nprops: Bucket\nmarks: Gate\nlook Hero: \"A hero.\"\n", .line = 5, .kind = "UnexpectedToken" },
+        .{ .script = "scene: Yard\ncast: Hero\nmarks: Gate\nplayer Hero\nplayer Hero\n", .line = 5, .kind = "UnexpectedToken" },
+        .{ .script = "scene: Yard\ncast: Hero\nmarks: Gate\non cue Uses(Hero, Hero):\n  transition to scene Yard at Well\n", .line = 5, .kind = "UnknownMark" },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.script);
+        errdefer std.debug.print("case: {s}\n", .{case.script});
+        try testing.expect(!res.is_valid);
+        try testing.expectEqual(case.line, res.diagnostic().?.line);
+        try testing.expectEqualStrings(case.kind, res.kind_name);
+    }
 }
 
 test "P48-09: name and phrase lines set what players read, and their mistakes are named" {

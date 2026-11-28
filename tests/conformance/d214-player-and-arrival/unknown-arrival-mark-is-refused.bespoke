@@ -1,0 +1,10 @@
+# The mark after 'at' must be one of that scene's marks.
+# pins: D-214
+# expect error: UnknownMark 10:3
+
+scene: Yard
+cast: Hero
+marks: Gate
+
+on cue Uses(Hero, Hero):
+  transition to scene Yard at Well

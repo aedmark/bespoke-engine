@@ -1,0 +1,9 @@
+# The player is someone a scene casts.
+# pins: D-214
+# expect error: UnexpectedToken 9:1
+
+scene: Yard
+cast: Hero
+marks: Gate
+
+player Ghost

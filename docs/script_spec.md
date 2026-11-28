@@ -75,7 +75,7 @@ Routine, cue, rule, dialogue-choice, and `during` bodies accept these statements
 | `interrupt Actor with:` | Push its indented body over the actor's current routine. |
 | `say Speaker: "text"`, `say Speaker to Listener: "text"` | Emit speech; the listener phrase is narrative and does not change dispatch. Parenthesized or unquoted text is also accepted. |
 | `animate Clip`, `animate(Target, Clip)`, `stop animate Clip` | Emit animation cues. The one-name forms target `Scene`. |
-| `transition to scene Name` | Change the active scene. A colon after `scene` is optional. After the tick, the host places a player who stands in another room on the scene's first mark (D-208); a top-level `transition` only picks the opening room. |
+| `transition to scene Name` | Change the active scene. A colon after `scene` is optional. After the tick, the host places a player who stands in another room on the scene's first mark (D-208); a top-level `transition` only picks the opening room. `transition to scene Name at Mark` places the player on that mark instead, even within the room (D-214); a name holding " at " is split there only when the whole is not a scene. |
 | `choice ...` | Open the consecutive choice set described below. |
 | `resume ...`, `done` | End an interruption body and resume the interrupted routine; words after `resume` are descriptive. |
 | `weave Draft on Target` | Cast a declared musical draft. |
@@ -638,6 +638,8 @@ name ExposureSlip: "the slip from the darkroom"
 phrase HintRoom: "Seek out the {room}."
 ```
 
+- `player <Name>` names the player actor (D-214): the one clicks and typed commands act for. It must be in some scene's `cast:` line; without the line the player is the first routine's actor. Stored in the optional `PLYR` package section, which a reader that does not know it skips.
+- `look <Prop>: "<text>"` sets what LOOK says of a prop no `LooksAt` handler answers, by click or typed (D-214). The prop must be in some scene's `props:` line. A string after the colon tells it apart from `look <Name>: <Image>`, an appearance.
 - `name <Thing>: "<text>"` sets what players read for an entity: on screen, in speech, in hints, and in replies. Without it the name is derived from the identifier (`HarbourClerk` reads "Harbour Clerk", D-093). A name for something the script never mentions, or a second name for the same thing, is an error. Typed commands still match the identifier's words and `alias` phrases; `name` changes only what is shown.
 - `phrase <Key>: "<text>"` replaces one sentence the engine writes. The text may use the key's placeholders, in any order, and no others; an unknown key is refused with a suggestion. A build has one language.
 - Text may be any UTF-8. The built-in 5x7 font draws printable ASCII, Latin-1 Supplement (`U+00A0` to `U+00FF`), common Latin Extended-A letters, and typographic punctuation (en and em dashes, curly quotes, ellipsis, and the euro sign) on both the desktop window and the browser canvas; unsupported characters render as `?`, and text measurement and truncation count characters rather than bytes (`D-179`, `P48-21`).
