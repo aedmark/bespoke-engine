@@ -1537,6 +1537,8 @@ pub const Codegen = struct {
         defer declared.deinit();
         for (ast.relations.items) |r| try declared.put(r.name, {});
         const Check = struct {
+            // A dialogue's choice appears wherever `talk` runs it (D-206): warn about it once.
+            var warned: std.AutoHashMapUnmanaged(usize, void) = .empty;
             fn walk(cg: *Codegen, w: *const std.StringHashMap(void), d: *const std.StringHashMap(void), stmts: []const parser_mod.Stmt) !void {
                 for (stmts) |st| switch (st) {
                     .loop_stmt => |b| try walk(cg, w, d, b),
@@ -1546,6 +1548,7 @@ pub const Codegen = struct {
                         var buf: [9]parser_mod.FactPattern = undefined;
                         for (guard_patterns(c, &buf)) |p| {
                             if (!d.contains(p.relation) or w.contains(p.relation)) continue;
+                            if ((try warned.getOrPut(cg.allocator, @intFromPtr(c.text.ptr))).found_existing) break;
                             const negated = if (c.guard) |g| g == .not_fact and std.mem.eql(u8, g.not_fact.relation, p.relation) else false;
                             const message = if (negated)
                                 try std.fmt.allocPrint(cg.allocator, "choice \"{s}\" is always offered: nothing in the script remembers '{s}', so 'not {s}' always holds", .{ c.text, p.relation, p.relation })
@@ -1560,6 +1563,8 @@ pub const Codegen = struct {
                 };
             }
         };
+        Check.warned = .empty;
+        defer Check.warned.deinit(self.allocator);
         try Check.walk(self, &written, &declared, ast.initial_stmts.items);
         for (ast.routines.items) |r| try Check.walk(self, &written, &declared, r.body);
         for (ast.cue_handlers.items) |h| try Check.walk(self, &written, &declared, h.body);
@@ -2313,6 +2318,9 @@ fn check_loop_u16(span: usize) error{JumpOffsetTooLarge}!u16 {
 
     fn compile_stmt(self: *Codegen, stmt: Stmt) !void {
         switch (stmt) {
+            // The parser replaces every `talk` with its dialogue's lines (D-206); one left here
+            // would be a parser bug, refused rather than compiled to nothing.
+            .talk => return error.UnexpandedTalk,
             .remember => |rem| {
                 const subj = try self.entity_arg(rem.args[0]);
                 const rel = try self.resolve_relation(rem.relation);

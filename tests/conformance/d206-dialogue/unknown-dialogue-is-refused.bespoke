@@ -1,0 +1,9 @@
+# A talk that names no dialogue is refused at the talk.
+# pins: D-206
+# expect error: UnexpectedToken 9:1
+
+scene Quay:
+  cast: Hero
+
+routine Greet(Hero):
+  talk Nowhere

@@ -391,6 +391,34 @@ A classic parser adventure measures time in turns: `clock: turns` makes the cloc
 
 A larger game can keep its parts apart: `include "art.bespoke"` reads another file in place, once, with paths from the main script's folder (D-169). Keep what is shared, such as scenes and relations, in the main script and give each act or each kind of thing its own file. `proofs/art/lamplighter/` keeps The Lamplighter's Round's art and talk in `art.bespoke` and `talk.bespoke`. An error names the file it is in.
 
+### Dialogue blocks
+
+A conversation can live in its own `dialogue` block, run with `talk` from any handler or routine (P47-15, D-206). It plays exactly as the same choices written inline, and the Studio's dialogue map shows it on its own.
+
+```bespoke
+scene Quay:
+  cast: Hero, Guide
+
+relation Paid(who)
+
+dialogue AskGuide:
+  speaker Guide
+  say "Well, traveller?"
+  choice "Pay the toll." if not Paid(Hero):
+    remember Paid(Hero)
+    say "Thank you kindly."
+    choice "Ask the way.":
+      say "North, past the mill."
+  choice "Goodbye.":
+    say Hero: "Farewell."
+
+on cue TalksTo(Hero, Guide):
+  talk AskGuide
+```
+
+- A dialogue holds `speaker`, `say`, `choice`, `remember`, `forget`, and `talk` lines; anything else belongs in a handler or routine.
+- `talk Other` inside a dialogue hands on to another one; a dialogue that talks round to itself is refused.
+
 ### Rooms
 
 A `room` block says where a scene's marks and props stand on its 320x180 art, which marks walkways join, and where exits lead (P47-11, D-199). Without one, a scene's marks stand in a row, each joined to the next.

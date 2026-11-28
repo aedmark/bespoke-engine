@@ -2605,6 +2605,36 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** recording writers while playing, rejected for now as engine work in the VM, package, and save paths for a question the script can mostly answer; picking the fact in the runtime's drawn State drawer, rejected because it is mouse-and-keys only and needs the inspector's selection exposed; hiding engine facts, rejected because an author looking at `Chose` wants to know where it came from.
 
+## D-206 A Named Dialogue Block, Run by `talk`, Holding Only Dialogue Lines; Language Before Editor (2026-11-27, status: accepted; P47-14, P47-15, follows D-204)
+
+**Context.** D-204 made the dialogue map read-only because the language has no dialogue block: a conversation is `choice` statements inside handler and routine bodies, which D-202 keeps out of the Studio's editing. P47-14, writing dialogue, starts with a language decision on a block the editor can own, as room blocks did (D-198). None of `dialogue`, `talk`, or `speaker` is a word of the language today. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **A named block, run by `talk`.** A top-level block holds a conversation, and any handler or routine runs it with one statement:
+   ```
+   dialogue AskGuide:
+     speaker Guide
+     say "Well, traveller?"
+     choice "Pay the toll." if not Paid(Hero):
+       remember Paid(Hero)
+       say "Thank you kindly."
+       choice "Ask the way.":
+         say "North, past the mill."
+     choice "Goodbye.":
+       say "Come back soon."
+
+   on cue TalksTo(Hero, Guide):
+     talk AskGuide
+   ```
+   `talk <Dialogue>` runs the block as if its lines stood there, so it compiles to the same choice sets (D-046) and plays, saves, and rewinds exactly as inline choices do. Inline `choice` sets keep working.
+2. **Dialogue lines only.** A dialogue holds `speaker <Name>` (once, first; the default speaker of its `say` lines), `say "<text>"` or `say <Name>: "<text>"`, `choice` with its `if` and `where` guards and nested lines, `remember` and `forget`, and `talk <Other>` to hand on to another dialogue. Anything else stays in handlers and routines, so everything in a dialogue is something the editor can show and write.
+3. **Language, then editor.** P47-15 adds the block and `talk` to the language: compiler, the dialogue map (which lists dialogue blocks as conversations), the never-offered warning (D-204), the spec, the authoring guide, and conformance cases. P47-14 then builds the editor.
+4. **A line form with the live map.** The editor is a form of the block's lines with indent and outdent buttons, Apply rewrites the block whole, checked by the compiler before it is kept (D-197 item 4), and the dialogue map beside it redraws from what is typed.
+
+**Consequences.** Built 2026-11-27 (session 132, P47-15). The parser replaces each `talk` with the dialogue's lines once the script is read (`expand_talks`), so code generation never meets one; a test shows a dialogue run by `talk` compiles to byte-identical code and fingerprint as the same lines written inline. A `talk` that names an unknown dialogue is refused at the `talk`, and one that leads back to a dialogue already running is refused at the `talk` that closes the loop; nesting is bounded as statement nesting is (`MAX_STMT_DEPTH`). `talk` and `dialogue` are words only when a name follows on the line, so both stay usable as names. The dialogue map lists dialogue blocks as conversations of their own, and a handler that `talk`s one shows the same lines at the dialogue's own line numbers; the never-offered warning and the fact-writer lookup list a dialogue's choice or `remember` once however often it is talked. 67 existing scripts compile to the same packages as before. The browser modules that compile scripts grew by about 10 KB (`bespoke.wasm` 654,901 to 665,071 bytes, `bespoke-proofs.wasm` 1,088,114 to 1,097,630), within D-159's 1.5 MiB.
+
+**Alternatives:** a dialogue bound to its cue in its header, rejected because one cue would take one dialogue and none could be reused; any statement inside a dialogue, rejected because the editor could not show or write all of it; the language and editor in one change, rejected to keep reviewable changes, as rooms went; editing on the map itself, rejected for now as a larger piece of UI than a line form beside a live map.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

@@ -183,6 +183,29 @@ on cue TalksTo(Hero, Guide):
     say Guide: "Then you may pass."
 ```
 
+### Dialogue blocks (P47-15, D-206)
+
+A `dialogue <Name>:` block holds a conversation, and `talk <Name>` in any handler or routine runs it where it stands, exactly as if its lines were written there: it compiles to the same choice sets, and plays, saves, and rewinds the same way.
+
+```text
+dialogue AskGuide:
+  speaker Guide
+  say "Well, traveller?"
+  choice "Pay the toll." if not Paid(Hero):
+    remember Paid(Hero)
+    say "Thank you kindly."
+  choice "Goodbye.":
+    say Hero: "Farewell."
+
+on cue TalksTo(Hero, Guide):
+  talk AskGuide
+```
+
+- A dialogue holds only dialogue lines: `speaker <Name>` (once, first), `say "<text>"` (the speaker's) or `say <Name>: "<text>"`, `choice` with its `if` and `where` guards and nested lines, `remember`, `forget`, and `talk <Other>` to hand on to another dialogue. Anything else is an error naming the line; walks, waits, and the rest stay in handlers and routines.
+- A `say` without a name in a dialogue with no `speaker` line is an error. A dialogue is declared once.
+- `talk` that names no dialogue is an error at the `talk`, and so is a `talk` that leads back to a dialogue already running (a dialogue may not talk round to itself).
+- `talk` is a word of the language only when a name follows it on the line, so `talk` stays usable as a name.
+
 ## Stageplay Paths
 
 A `path` block declares one operational approach. It owns the facts changed when the route is selected (`remember`, `forget`, `now`, or a state phrase) and the routines that belong to it.
@@ -762,6 +785,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Pixel art (P46-03) | `P46-03: art declarations compile into the program with their bindings`; `P46-03: art mistakes are reported on their own line` (`src/compiler.zig`) | `P48-17: every part of a program round-trips through its own section, byte for byte` (`src/package.zig`); `P46-03: the image stage's script declares its art and compiles it into the program` and the `image_stage/replay` render golden lines (`proofs/`) |
 | Colour cycling (P49-01) | `P49-01: colour cycles compile with explicit or default intervals and reject invalid declarations` (`src/compiler.zig`); `tests/conformance/d190-colour-cycling/` | `P49-01: colour cycles rotate forward and validate bounds and disjoint RGBs` (`src/image.zig`); `P49-01: draw_image_cycled rotates cycled palette pixels forward and keeps uncycled and transparent pixels untouched` (`src/display/canvas.zig`); `P49-01: desktop and browser draw identical cycled frames and leave world and saves unchanged` (`src/wasm.zig`); `P49-01: colour cycles round-trip in optional CYCL section and 1.0 readers skip it cleanly` (`src/package.zig`) |
 | Room blocks (P47-11) | `D-199: a room block places marks and props in art pixels, and its walkways replace the chain` and `D-199: room block refusals name the line and the missing thing` (`src/compiler.zig`); `tests/conformance/d199-rooms/` | `D-199: art pixels snap to the nearest world unit` (`src/spatial.zig`); `D-199: art_to_world inverts world_to_screen within half a unit` (`src/display/renderer.zig`); the D-199 exit tests in `src/runner.zig`, `src/host.zig`, `src/wasm.zig`, and `src/package.zig` |
+| Dialogue blocks (P47-15) | `D-206: a dialogue run by talk compiles to exactly the code of the same lines written inline`, `D-206: dialogue refusals name the line`, and `D-206: the dialogue map lists a dialogue block, then the handler that talks it` (`src/compiler.zig`); `tests/conformance/d206-dialogue/` | the authoring guide's dialogue example |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P48-17: every part of a program round-trips through its own section, byte for byte` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

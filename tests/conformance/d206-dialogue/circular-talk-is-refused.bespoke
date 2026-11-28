@@ -1,0 +1,17 @@
+# A dialogue may not talk round to itself.
+# pins: D-206
+# expect error: UnexpectedToken 14:1
+
+scene Quay:
+  cast: Hero, Guide
+
+dialogue A:
+  speaker Guide
+  talk B
+
+dialogue B:
+  speaker Guide
+  talk A
+
+routine Greet(Hero):
+  talk A

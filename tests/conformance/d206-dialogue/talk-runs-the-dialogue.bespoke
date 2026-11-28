@@ -1,0 +1,23 @@
+# `talk` runs a dialogue where it stands: its say lines speak and its choices are offered.
+# pins: D-206
+# ticks: 4
+# expect line: Guide: "Well, traveller?"
+# expect line: Choices for Hero: 1. Pay the toll. 2. Goodbye.
+
+scene Quay:
+  cast: Hero, Guide
+
+relation Paid(who)
+
+dialogue AskGuide:
+  speaker Guide
+  say "Well, traveller?"
+  choice "Pay the toll." if not Paid(Hero):
+    remember Paid(Hero)
+    say "Thank you kindly."
+  choice "Goodbye.":
+    say "Come back soon."
+
+routine Greet(Hero):
+  wait 1 ticks
+  talk AskGuide

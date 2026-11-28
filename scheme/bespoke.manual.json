@@ -812,6 +812,7 @@
             "Fibers executing choice blocks evaluate relational guards, record the eligible options as World facts, and suspend until a selection resumes the chosen body.",
             "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks on any row of a choice, mouse wheel scrolling, and number keys 1-9; the browser answers clicks and number keys.",
             "The open set lives in World facts, so snapshots and rewinds carry it; RenderFrame.dialogue publishes it to the balloon by revision.",
+            "A conversation may live in a named dialogue block, run by talk from any handler or routine; the parser replaces each talk with the block's lines, so it compiles to the same choice sets, and an unknown or circular talk is refused (P47-15, D-206).",
             "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions.",
             "A host can queue click-through messages (queue_message, D-080): each shows alone in the panel's place with a continue hint, a click, Enter, or Space dismisses it, and the choices beneath stay hidden and unanswerable until all are read."
           ],

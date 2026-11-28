@@ -683,6 +683,9 @@ pub fn dialogue_sources(arena: std.mem.Allocator, source: []const u8, files: ?Fi
         }
     }.one;
     var b = Build{ .e = expanded, .a = arena, .written = written, .declared = &declared };
+    // Dialogue blocks first, as written (P47-15, D-206); a handler that `talk`s one shows the
+    // same lines again, expanded where it runs them.
+    for (ast.dialogues) |d| try add(&out, &b, try std.fmt.allocPrint(arena, "dialogue {s}", .{d.name}), d.line, d.body);
     const first_line: u32 = if (parse.initial_fact_lines.items.len > 0) parse.initial_fact_lines.items[0].line else 1;
     try add(&out, &b, "Top level", first_line, ast.initial_stmts.items);
     for (ast.cue_handlers.items) |h| {
@@ -716,9 +719,12 @@ pub fn writer_sources(arena: std.mem.Allocator, source: []const u8, files: ?File
         e: includes.Expanded,
         a: std.mem.Allocator,
         out: std.ArrayList(WriterLine) = .empty,
+        seen: std.AutoHashMapUnmanaged(u32, void) = .empty,
         fn walk(w: *@This(), stmts: []const parser.Stmt) !void {
             for (stmts) |st| switch (st) {
                 .remember => |r| {
+                    // A dialogue's lines appear wherever `talk` runs it (D-206); list each once.
+                    if ((try w.seen.getOrPut(w.a, r.line)).found_existing) continue;
                     const at = w.e.locate(r.line);
                     try w.out.append(w.a, .{ .relation = r.relation, .args = r.args, .at = .{ .script = at.file, .line = at.line, .end_line = at.line } });
                 },
@@ -739,6 +745,7 @@ pub fn writer_sources(arena: std.mem.Allocator, source: []const u8, files: ?File
         try w.walk(pd.facts);
         for (pd.routines) |r| try w.walk(r.body);
     }
+    for (ast.dialogues) |d| try w.walk(d.body);
     var decls: std.ArrayList(WriterDecl) = .empty;
     for (ast.decisions.items) |d| {
         const at = expanded.locate(d.line);
@@ -872,6 +879,7 @@ fn failure_message(err: anyerror) []const u8 {
     return switch (err) {
         // Bytecode's ListWriter translates allocation failure to WriteFailed.
         error.OutOfMemory, error.WriteFailed => "not enough memory to check this script",
+        error.UnexpandedTalk => "a 'talk' was not replaced by its dialogue; please report this",
         error.Overflow => "number is outside the supported range",
         error.InvalidCharacter => "invalid numeric literal",
         error.DuplicateRoutineName => "routine name is already in use",
@@ -2167,6 +2175,98 @@ test "D-199: room block refusals name the line and the missing thing" {
         .{ .body = "room Cellar:\n  mark Gate at 1 1\n", .line = 7, .says = "names no scene" },
         .{ .body = "room Hall:\n  mark Door at 1 1\n\nroom Hall:\n  mark Door at 2 2\n", .line = 10, .says = "two room blocks" },
         .{ .body = "room Yard:\n  mark Gate 1 1\n  mark Well at 2 2\n", .line = 8, .says = "expects 'at <x> <y>'" },
+    };
+    for (cases) |c| {
+        var buf: [512]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf, "{s}{s}", .{ head, c.body });
+        const res = check_source(testing.allocator, src);
+        if (res.is_valid or res.line != c.line or std.mem.indexOf(u8, res.message(), c.says) == null) {
+            std.debug.print("case {s}: valid={} line={d} message={s}\n", .{ c.body, res.is_valid, res.line, res.message() });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "D-206: a dialogue run by talk compiles to exactly the code of the same lines written inline" {
+    const testing = std.testing;
+    const head = "scene Quay:\n  cast: Hero, Guide\n\nrelation Paid(who)\n\n";
+    const with_dialogue = head ++
+        \\dialogue AskGuide:
+        \\  speaker Guide
+        \\  say "Well, traveller?"
+        \\  choice "Pay the toll." if not Paid(Hero):
+        \\    remember Paid(Hero)
+        \\    say "Thank you kindly."
+        \\  choice "Goodbye.":
+        \\    say Hero: "Farewell."
+        \\
+        \\routine Greet(Hero):
+        \\  wait 1 ticks
+        \\  talk AskGuide
+        \\
+    ;
+    const inline_lines = head ++
+        \\routine Greet(Hero):
+        \\  wait 1 ticks
+        \\  say Guide: "Well, traveller?"
+        \\  choice "Pay the toll." if not Paid(Hero):
+        \\    remember Paid(Hero)
+        \\    say Guide: "Thank you kindly."
+        \\  choice "Goodbye.":
+        \\    say Hero: "Farewell."
+        \\
+    ;
+    var w1 = try World.init(testing.allocator, 1024 * 1024);
+    defer w1.deinit();
+    var c1 = try compile_source(testing.allocator, &w1, null, with_dialogue);
+    defer c1.deinit();
+    var w2 = try World.init(testing.allocator, 1024 * 1024);
+    defer w2.deinit();
+    var c2 = try compile_source(testing.allocator, &w2, null, inline_lines);
+    defer c2.deinit();
+    try testing.expectEqualSlices(u8, c2.chunk.code.items, c1.chunk.code.items);
+    try testing.expectEqual(c2.fingerprint, c1.fingerprint);
+}
+
+test "D-206: the dialogue map lists a dialogue block, then the handler that talks it" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Quay:
+        \\  cast: Hero, Guide
+        \\
+        \\dialogue AskGuide:
+        \\  speaker Guide
+        \\  say "Well?"
+        \\  choice "Goodbye.":
+        \\    say "Bye."
+        \\
+        \\on cue TalksTo(Hero, Guide):
+        \\  talk AskGuide
+        \\
+    ;
+    const conv = try dialogue_sources(arena.allocator(), src, null);
+    try testing.expectEqual(@as(usize, 2), conv.len);
+    try testing.expectEqualStrings("dialogue AskGuide", conv[0].title);
+    try testing.expectEqual(@as(u32, 4), conv[0].at.line);
+    try testing.expectEqualStrings("Guide", conv[0].nodes[0].speaker);
+    try testing.expectEqual(@as(u32, 7), conv[0].nodes[1].line);
+    // The handler shows the same lines, at the dialogue's own line numbers.
+    try testing.expectEqualStrings("on cue TalksTo(Hero, Guide)", conv[1].title);
+    try testing.expectEqual(@as(u32, 7), conv[1].nodes[1].line);
+}
+
+test "D-206: dialogue refusals name the line" {
+    const testing = std.testing;
+    const head = "scene Quay:\n  cast: Hero, Guide\n\n";
+    const Case = struct { body: []const u8, line: u32, says: []const u8 };
+    const cases = [_]Case{
+        .{ .body = "routine Greet(Hero):\n  talk Nowhere\n", .line = 5, .says = "no dialogue 'Nowhere'" },
+        .{ .body = "dialogue A:\n  speaker Guide\n  talk B\n\ndialogue B:\n  speaker Guide\n  talk A\n\nroutine Greet(Hero):\n  talk A\n", .line = 10, .says = "talks round to itself" },
+        .{ .body = "dialogue A:\n  say \"Hello.\"\n", .line = 5, .says = "has no 'speaker' line" },
+        .{ .body = "dialogue A:\n  speaker Guide\n  walk Hero to Quay\n", .line = 6, .says = "belongs in a handler or routine" },
+        .{ .body = "dialogue A:\n  speaker Guide\n  say \"Hi.\"\n\ndialogue A:\n  speaker Guide\n  say \"Hi.\"\n", .line = 8, .says = "declared twice" },
     };
     for (cases) |c| {
         var buf: [512]u8 = undefined;

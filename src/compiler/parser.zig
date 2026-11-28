@@ -114,6 +114,19 @@ pub const Stmt = union(enum) {
     },
     /// `play score <Name>`, or `stop score` when null (P28-03, D-062).
     play_score: ?[]const u8,
+    /// `talk <Dialogue>` (P47-15, D-206): replaced by the dialogue's lines once the script is
+    /// read (`expand_talks`), so code generation never meets one.
+    talk: struct { name: []const u8, line: u32 },
+};
+
+/// `dialogue <Name>:` (P47-15, D-206): a conversation of dialogue lines that `talk` runs where
+/// it stands. `body` is as written; `talk` lines in it are expanded like any other body's.
+pub const DialogueDecl = struct {
+    name: []const u8,
+    speaker: []const u8,
+    line: u32,
+    end_line: u32,
+    body: []const Stmt,
 };
 
 /// `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` (P22-01, D-029).
@@ -675,6 +688,8 @@ pub const AST = struct {
     art: ArtDecl = .{},
     /// `room <Scene>:` blocks (P47-11, D-199), checked; in the parser's allocator.
     rooms: []const RoomDecl = &.{},
+    /// `dialogue <Name>:` blocks (P47-15, D-206), their bodies expanded; parser's allocator.
+    dialogues: []const DialogueDecl = &.{},
     /// `save version N` (P48-08, D-162); 1 when the script declares none.
     save_version: ?u32 = null,
     /// `rewinds reroll` (P48-14, D-184): a rewind keeps the dice going.
@@ -833,6 +848,8 @@ pub const Parser = struct {
     room_srcs: std.ArrayListUnmanaged(RoomDecl) = .empty,
     /// The line of the last token `advance` consumed (P47-13, D-203).
     last_line: u32 = 0,
+    /// `dialogue` blocks as written, in source order (P47-15, D-206).
+    dialogue_srcs: std.ArrayListUnmanaged(DialogueDecl) = .empty,
     /// Top-level `remember` lines in source order (P47-05, D-202).
     initial_fact_lines: std.ArrayListUnmanaged(InitialFactLine) = .empty,
 
@@ -1616,7 +1633,183 @@ pub const Parser = struct {
         try self.check_limits();
         try self.resolve_art(&ast);
         try self.resolve_rooms(&ast);
+        try self.expand_talks(&ast);
         return ast;
+    }
+
+    /// `talk <Name>` at `start` (already the current token): returns the statement and consumes
+    /// it, or null when `start` is not `talk` followed by a name on its line, leaving the token
+    /// stream untouched so `talk` stays usable as a name.
+    fn take_talk(self: *Parser, start: Token) !?Stmt {
+        if (!std.mem.eql(u8, start.slice, "talk")) return null;
+        const save_lexer = self.lexer.*;
+        const save_current = self.current;
+        const save_last = self.last_line;
+        try self.advance();
+        if (self.current.tag != .identifier or self.current.line != start.line) {
+            self.lexer.* = save_lexer;
+            self.current = save_current;
+            self.last_line = save_last;
+            return null;
+        }
+        const name = self.current.slice;
+        try self.advance();
+        return Stmt{ .talk = .{ .name = name, .line = @intCast(start.line) } };
+    }
+
+    /// `dialogue <Name>:` and its lines (P47-15, D-206); `start` is the consumed `dialogue`.
+    fn parse_dialogue(self: *Parser, start: Token) !void {
+        const name_tok = try self.expect(.identifier);
+        if (self.current.tag != .colon) return self.error_at(self.current, "dialogue '{s}' expects ':' and its lines below it", .{name_tok.slice});
+        try self.advance();
+        _ = try self.expect(.indent);
+        var speaker: []const u8 = "";
+        if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "speaker")) {
+            try self.advance();
+            speaker = try self.parse_name();
+        }
+        const body = try self.parse_dialogue_lines(name_tok.slice, speaker);
+        _ = try self.expect(.dedent);
+        for (self.dialogue_srcs.items) |prior| if (std.mem.eql(u8, prior.name, name_tok.slice))
+            return self.error_at(name_tok, "dialogue '{s}' is declared twice", .{name_tok.slice});
+        try self.dialogue_srcs.append(self.allocator, .{ .name = name_tok.slice, .speaker = speaker, .line = @intCast(start.line), .end_line = self.last_line, .body = body });
+    }
+
+    /// A dialogue's lines (D-206 item 2): `say`, `choice` with its guard and nested lines,
+    /// `remember`, `forget`, and `talk`. A `say` without a speaker takes the dialogue's.
+    fn parse_dialogue_lines(self: *Parser, dialogue: []const u8, speaker: []const u8) ![]const Stmt {
+        if (self.stmt_depth >= MAX_STMT_DEPTH) return error.NestingTooDeep;
+        self.stmt_depth += 1;
+        defer self.stmt_depth -= 1;
+        var list = std.array_list.Managed(Stmt).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const at = self.current;
+            switch (at.tag) {
+                .kw_say => {
+                    try self.advance();
+                    var who = speaker;
+                    if (self.current.tag != .string_literal) {
+                        who = try self.parse_name();
+                        _ = try self.expect(.colon);
+                    } else if (speaker.len == 0) {
+                        return self.error_at(at, "dialogue '{s}' has no 'speaker' line, so this 'say' needs one: say <Name>: \"...\"", .{dialogue});
+                    }
+                    const text = (try self.expect(.string_literal)).slice;
+                    try list.append(.{ .say = .{ .speaker = who, .text = text, .line = @intCast(at.line) } });
+                },
+                .kw_remember => try list.append(try self.parse_remember_stmt()),
+                .kw_forget => {
+                    try self.advance();
+                    const pat = try self.parse_fact_pattern();
+                    try list.append(.{ .forget = .{ .relation = pat.relation, .args = pat.args } });
+                },
+                .kw_choice => {
+                    var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);
+                    while (self.current.tag == .kw_choice) {
+                        const choice_line: u32 = @intCast(self.current.line);
+                        try self.advance();
+                        const text = (try self.expect(.string_literal)).slice;
+                        var guard: ?Expr = null;
+                        if (self.current.tag == .kw_if) {
+                            try self.advance();
+                            guard = try self.parse_expr();
+                        }
+                        var where_patterns = std.array_list.Managed(FactPattern).init(self.allocator);
+                        if (self.current.tag == .kw_where) {
+                            try self.advance();
+                            while (true) {
+                                try where_patterns.append(try self.parse_fact_pattern());
+                                if (self.current.tag == .kw_and) try self.advance() else break;
+                            }
+                        }
+                        _ = try self.expect(.colon);
+                        _ = try self.expect(.indent);
+                        const body = try self.parse_dialogue_lines(dialogue, speaker);
+                        _ = try self.expect(.dedent);
+                        try choices.append(.{ .text = text, .guard = guard, .where_patterns = try where_patterns.toOwnedSlice(), .body = body, .line = choice_line });
+                    }
+                    try list.append(.{ .choice_block = try choices.toOwnedSlice() });
+                },
+                .identifier => {
+                    if (try self.take_talk(at)) |talk| {
+                        try list.append(talk);
+                        continue;
+                    }
+                    if (std.mem.eql(u8, at.slice, "speaker")) return self.error_at(at, "dialogue '{s}' names its speaker once, on its first line", .{dialogue});
+                    return self.error_at(at, "a dialogue holds 'say', 'choice', 'remember', 'forget', and 'talk' lines; '{s}' belongs in a handler or routine", .{at.slice});
+                },
+                else => return self.error_at(at, "a dialogue holds 'say', 'choice', 'remember', 'forget', and 'talk' lines; '{s}' belongs in a handler or routine", .{at.slice}),
+            }
+        }
+        return list.toOwnedSlice();
+    }
+
+    /// Replaces every `talk <Name>` with that dialogue's lines (P47-15, D-206 item 1), so a
+    /// dialogue compiles to the same choice sets as inline choices. An unknown dialogue, or one
+    /// that talks round to itself, is refused at the `talk` that reaches it.
+    fn expand_talks(self: *Parser, ast: *AST) !void {
+        const dialogues = self.dialogue_srcs.items;
+        var stack: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (ast.routines.items) |*r| r.body = try self.expand_body(dialogues, &stack, r.body);
+        for (ast.cue_handlers.items) |*h| h.body = try self.expand_body(dialogues, &stack, h.body);
+        for (ast.when_rules.items) |*r| r.body = try self.expand_body(dialogues, &stack, r.body);
+        ast.initial_stmts.items = @constCast(try self.expand_body(dialogues, &stack, ast.initial_stmts.items));
+        for (ast.paths.items) |*pd| {
+            for (@constCast(pd.routines)) |*r| r.body = try self.expand_body(dialogues, &stack, r.body);
+        }
+        const out = try self.allocator.alloc(DialogueDecl, dialogues.len);
+        for (dialogues, out) |d, *o| {
+            try stack.append(self.allocator, d.name);
+            o.* = d;
+            o.body = try self.expand_body(dialogues, &stack, d.body);
+            _ = stack.pop();
+        }
+        ast.dialogues = out;
+    }
+
+    fn expand_body(self: *Parser, dialogues: []const DialogueDecl, stack: *std.ArrayListUnmanaged([]const u8), stmts: []const Stmt) ![]const Stmt {
+        var has = false;
+        for (stmts) |st| switch (st) {
+            .talk, .choice_block, .if_stmt, .loop_stmt, .interrupt_with => has = true,
+            else => {},
+        };
+        if (!has) return stmts;
+        var out = std.array_list.Managed(Stmt).init(self.allocator);
+        for (stmts) |st| switch (st) {
+            .talk => |t| {
+                const d = for (dialogues) |x| {
+                    if (std.mem.eql(u8, x.name, t.name)) break x;
+                } else {
+                    var hints = Suggestions{};
+                    for (dialogues) |x| hints.consider(t.name, x.name);
+                    self.suggestion = hints.result();
+                    const msg = std.fmt.bufPrint(&self.diag_buf, "talk names no dialogue '{s}'; declare it with 'dialogue {s}:'", .{ t.name, t.name }) catch "talk names no such dialogue";
+                    self.diagnostic = .{ .line = t.line, .column = 1, .message = msg };
+                    return error.UnexpectedToken;
+                };
+                for (stack.items) |seen| if (std.mem.eql(u8, seen, d.name)) {
+                    const msg = std.fmt.bufPrint(&self.diag_buf, "dialogue '{s}' talks round to itself; a 'talk' may not lead back to a dialogue already running", .{d.name}) catch "a dialogue talks round to itself";
+                    self.diagnostic = .{ .line = t.line, .column = 1, .message = msg };
+                    return error.UnexpectedToken;
+                };
+                try stack.append(self.allocator, d.name);
+                try out.appendSlice(try self.expand_body(dialogues, stack, d.body));
+                _ = stack.pop();
+            },
+            .choice_block => |cs| {
+                const copy = try self.allocator.alloc(DialogueChoice, cs.len);
+                for (cs, copy) |c, *o| {
+                    o.* = c;
+                    o.body = try self.expand_body(dialogues, stack, c.body);
+                }
+                try out.append(.{ .choice_block = copy });
+            },
+            .if_stmt => |x| try out.append(.{ .if_stmt = .{ .cond = x.cond, .body = try self.expand_body(dialogues, stack, x.body) } }),
+            .loop_stmt => |b| try out.append(.{ .loop_stmt = try self.expand_body(dialogues, stack, b) }),
+            .interrupt_with => |x| try out.append(.{ .interrupt_with = .{ .entity = x.entity, .body = try self.expand_body(dialogues, stack, x.body) } }),
+            else => try out.append(st),
+        };
+        return out.toOwnedSlice();
     }
 
     /// Checks every room block against its scene (D-199 item 4): the scene is declared with
@@ -2841,6 +3034,10 @@ pub const Parser = struct {
             try self.parse_room(start);
             return true;
         }
+        if (std.mem.eql(u8, word, "dialogue") and same_line and self.current.tag == .identifier) {
+            try self.parse_dialogue(start);
+            return true;
+        }
         return false;
     }
 
@@ -3791,6 +3988,10 @@ pub const Parser = struct {
                 },
                 .identifier => {
                     const start = self.current;
+                    if (try self.take_talk(start)) |talk| {
+                        try list.append(talk);
+                        continue;
+                    }
                     const subj = try self.parse_name();
                     if (self.current.tag == .kw_is or self.current.tag == .kw_are) {
                         try self.advance();

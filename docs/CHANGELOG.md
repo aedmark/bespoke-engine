@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Dialogue blocks (`P47-15`, `D-206`): `dialogue <Name>:` holds a conversation of `speaker`, `say`, guarded and nested `choice`, `remember`, `forget`, and `talk` lines, and `talk <Name>` runs it from any handler or routine, compiling to exactly the code of the same lines written inline. An unknown or circular `talk` is refused. The Studio's dialogue map lists dialogue blocks. Existing scripts compile to the same packages.
+
 - The Studio shows which line wrote a fact (`P47-09`, `D-205`): the Play window's Facts panel lists the running game's facts, and Show line opens the `remember` line that wrote one, lists the lines that could have when several might, or names the engine system that writes it and the decision or dilemma behind a `Chose`. Nothing changes in the engine or in shipped games.
 
 - The Studio maps dialogue (`P47-04`, `D-204`): the Dialogue window draws each conversation's choices as a tree, with what is said in boxes and each choice's guard on its arrow, and a click opens the script at that line. A choice whose guard nothing in the script can make true is marked, and `bespoke check` now warns about it. Writing dialogue is `P47-14`.
