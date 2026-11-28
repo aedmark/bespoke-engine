@@ -29,6 +29,33 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`runbooks/release-hand-test.md`](runbooks/release-hand-test.md) | Release owners and the maintainer | The hand-test pass before a release: desktop proofs, listening, browser builds, export, the hand-uploaded site (maintainer only), macOS CI, and its results table | Automated suites and commands (TESTING) |
 | [`manual.html`](manual.html) | Developers and agents | Standalone 3x interactive manual & developer guide (What, How, Why) | Raw Markdown sources |
 
+## Where the Code Lives
+
+`src/` and `tools/` are flat folders, and their paths are cited throughout the docs and decisions, so they stay put. This map groups them by role. `AGENTS.md` lists the top-level folders.
+
+**`src/`, the engine (exported as the `bespoke` module by `src/root.zig`):**
+
+| Role | Files |
+| --- | --- |
+| The world and the clock | `world.zig` (the fact arena), `vm.zig` (fibers, cues, rules), `bytecode.zig`, `dice.zig`, `limits.zig`, `reserved.zig` (the engine's relation names) |
+| The language | `compiler.zig` and `compiler/` (`lexer`, `parser`, `codegen`, `includes`, `diagnostic`) |
+| Rooms and movement | `spatial.zig` (waypoints, walks, hotspots), `grid.zig` (cells and fire, smoke, water) |
+| Story systems | `dialogue.zig`, `command.zig` (typed commands), `phrase.zig`, `hint.zig` (goals), `decision.zig`, `value.zig`, `dilemma.zig`, `agency.zig`, `society.zig`, `duel.zig`, `spell.zig`, `draft.zig` (musical drafts), `container.zig` (things that wear out) |
+| Time | `hypervisor.zig` (branch worlds), `temporal_snapshot.zig` |
+| Art and sound | `image.zig`, `art_import.zig`, `png.zig`, `qoi.zig`, `audio.zig`, `mml.zig`, and `display.zig` with `display/` (canvas, renderer, font, panels, layout) |
+| Files on disk | `package.zig` (`.bspk`), `save.zig` (`.sav`), `list_writer.zig` |
+| Hosts | `host.zig` (the host kit), `runner.zig` (the stock runner and window), `main.zig` (the `bespoke` CLI), `repl.zig`, `scaffold.zig` and `scaffold/` (`bespoke init`), `wasm.zig` (the browser runtime), `wasm_engine.zig` (the engine's own browser module) |
+| Tests kept in the engine | `authoring_guide_test.zig` (keeps `docs/AUTHORING.md` true) |
+
+**`tools/`, the scripts around the engine:**
+
+| Role | Files |
+| --- | --- |
+| Build pages and games | `build_site.py` (showcase and proof pages, with `proof_page.js`, `engine_audio.js`, `site_gallery.json`), `build_studio.py`, `build_sunken_vault.py`, `build_lantern_watch.py`, `pack_game_page.py`, `build_editor_grammar.py`, `manual.py` |
+| Check the repository | `check_docs.py` (runs the next two), `check_third_party.py` (with `third_party_terms.json` and `third_party_baseline.json`), `check_separation.py` (with `separation_baseline.json`), `check_conformance.py`, `check_version.py`, `check_web_budgets.py` (with `web_budgets.json`), `check_tutorial.py`, `check_template_deps.sh` |
+| Drive a browser | `wasm_smoke.js`, `browser_smoke.js`, `studio_smoke.js` (Studio checks also live in `studio/check_wasm.js`) |
+| Release and publish | `package_linux_release.py`, `package_browser_release.py`, `release_archive.py`, `check_linux_release.py`, `deploy_site.py` |
+
 ## Update Triggers
 
 Update documents because a relevant fact changed, not merely because a session ended.
