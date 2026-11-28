@@ -26,7 +26,10 @@
 //   9. (P47-03, D-200) the room editor moves a mark, adds a walkway and an exit, each written as
 //      the scene's room block after its `scene` block and checked; Undo restores the script's
 //      exact bytes; a block with comments asks first; Save changes only that script, and the
-//      command line walks through the new exit.
+//      command line walks through the new exit;
+//  10. (P47-12, D-201) the Grid tool adds a grid through its settings form, paints cells,
+//      places a mark on a cell (leaving the room block in the same edit), and Save writes the
+//      grid block beside the room block; the command line holds the painted cells as facts.
 'use strict';
 
 const fs = require('fs');
@@ -654,6 +657,65 @@ async function run(pageUrl) {
     s = await state();
     if (s.windows.includes('room:Yard') || JSON.stringify(s.rooms.scenes) !== '["Cellar"]') throw new Error(`switching scripts left ${JSON.stringify(s.windows)} ${JSON.stringify(s.rooms.scenes)}`);
     console.log(`ok  room editor: move, undo to the script's own bytes, walkway, exit, area, each checked; Save wrote only the block after the scene; ${roomCli}; a commented block asks first; another main script closes the old one's editors`);
+
+    // 10. The Grid tool.
+    const GRID_SRC = 'scene Yard:\n  cast: Hero\n  marks: Gate, Well\n\nroom Yard:\n  mark Gate at 40 120\n  mark Well at 200 132\n\nroutine Stroll(Hero):\n  wait 1 ticks\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(GRID_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate("window.bespokeStudio.openScene('Yard')");
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'tool:grid')");
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'grid-settings')");
+    await waitFor('the grid form', async () => ((await state()).windows.includes('grid-form:Yard') ? true : null));
+    await evaluate(`(() => {
+      const v = { name: 'Floor', width: '4', height: '3', cell: '10', origin_x: '-10', origin_y: '-20', burn: '6' };
+      for (const [k, val] of Object.entries(v)) {
+        const el = document.querySelector('[data-window="grid-form:Yard"] input[name="' + k + '"]');
+        el.value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return true;
+    })()`);
+    await click('[data-window="grid-form:Yard"] [data-gadget="grid-ok"]');
+    await waitFor('the grid', async () => ((await yard()).grid ? true : null));
+    // The centre of cell (x, y), on the art, as src/spatial.zig maps world to art.
+    const cellCentre = (g, x, y) => {
+      const wx = g.origin_x + x * g.cell + Math.trunc(g.cell / 2);
+      const wy = g.origin_y + y * g.cell + Math.trunc(g.cell / 2);
+      return [Math.floor((280 + 18 * wx - 2) / 4), Math.floor((380 + 12 * wy - 2) / 4)];
+    };
+    let grid = (await yard()).grid;
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'paint:flammable')");
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(cellCentre(grid, 0, 0))}, ${JSON.stringify(cellCentre(grid, 1, 0))}])`);
+    await waitFor('painted cells', async () => (JSON.stringify((await yard()).grid.cells.flammable) === '["0,0","1,0"]' ? true : null));
+    await evaluate("window.bespokeStudio.roomGadget('Yard', 'paint:place')");
+    ed = await yard();
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(drawnAt(ed, 'Well'))}])`);
+    await waitFor('Well picked', async () => (((await yard()).selected || {}).name === 'Well' ? true : null));
+    grid = (await yard()).grid;
+    await evaluate(`window.bespokeStudio.roomGesture('Yard', [${JSON.stringify(cellCentre(grid, 2, 2))}])`);
+    await waitFor('Well on the grid', async () => ((await yard()).grid.places.some((pl) => pl.mark === 'Well' && pl.x === 2 && pl.y === 2) ? true : null));
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const gridAfter = await evaluate(SNAPSHOT);
+    const gridText = Buffer.from(gridAfter['main.bespoke'].b64, 'base64').toString('latin1');
+    const gridWant = 'scene Yard:\n  cast: Hero\n  marks: Gate, Well\n\nroom Yard:\n  mark Gate at 40 120\n\ngrid Floor in Yard:\n  size 4 3\n  cell 10\n  origin -10 -20\n  burn 6\n  flammable 0 0 2 1\n  place Well 2 2\n\nroutine Stroll(Hero):\n  wait 1 ticks\n';
+    if (gridText !== gridWant) throw new Error(`grid save:\n${JSON.stringify(gridText)}\nwanted:\n${JSON.stringify(gridWant)}`);
+    let gridCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-grid-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), gridText);
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['run', path.join(dir, 'main.bespoke'), '--headless', '--ticks', '2', '--facts'], { encoding: 'utf8' });
+        const facts = (run.stdout.match(/CellFlammable/g) || []).length;
+        if (run.status !== 0 || facts !== 2) throw new Error(`bespoke run on the saved grid: ${facts} CellFlammable facts\n${run.stdout.slice(-800)}${run.stderr}`);
+        gridCli = 'bespoke run holds the two painted cells as CellFlammable facts';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  grid tool: settings form adds a grid, painted cells merge to one line, Well placed on a cell leaves the room block; ${gridCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

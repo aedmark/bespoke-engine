@@ -421,7 +421,7 @@ routine Stroll(Hero):
 ```
 
 - Positions are art pixels, the units `area` uses, so a mark goes where it is painted on the backdrop; the compiler snaps each to within 2 art pixels.
-- Every mark and prop the scene lists needs a line in its room block, and the compiler names the first one missing.
+- Every mark and prop the scene lists needs a line in its room block, and the compiler names the first one missing. A mark a grid's `place` line puts on a cell is the exception: it needs no room line, and may not have one (D-201).
 - A walk that ends on an exit mark moves the player to the other scene. Here the Hero walks to the Well and arrives in the Hall at the Door; walking to the Door again leads back.
 - The Studio's room editor (P47-03) rewrites a room block whole, so comments inside one do not survive an edit there.
 

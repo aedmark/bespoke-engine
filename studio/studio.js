@@ -722,6 +722,7 @@
       return j.written === false ? { written: false, refused: j.refused } : { written: false, result: j };
     }),
     fileBytes: (path) => { const f = findFile(path); return f ? f.bytes : null; },
+    scriptBytes: () => Object.fromEntries(S.project.files.filter((f) => /\.bespoke$/i.test(f.path)).map((f) => [f.path, f.bytes])),
     scriptWritten: (path) => { const bytes = moduleFile(path); if (bytes) painterFileChanged(path, bytes); },
     setScript: (path, bytes) => painterFileChanged(path, bytes),
   });

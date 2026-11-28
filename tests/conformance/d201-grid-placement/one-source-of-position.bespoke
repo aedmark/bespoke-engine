@@ -1,0 +1,15 @@
+# A mark placed by a room block may not also be placed by a grid's place line.
+# pins: D-201
+# expect error: UnexpectedToken 10:3
+
+scene Yard:
+  marks: Gate, Well
+
+room Yard:
+  mark Gate at 40 120
+  mark Well at 200 132
+
+grid Floor in Yard:
+  size 4 4
+  cell 10
+  place Well 1 1

@@ -889,7 +889,8 @@ pub const Codegen = struct {
                     for (sc_def.marks.items, 0..) |mname, idx| {
                         try mut_self.check_thing_name(mname);
                         try mut_self.check_case_twin(mname);
-                        const at: spatial_mod.Point2D = if (room) |r| room_point(r, mname, false) else .{ .x = stage_x(idx, sc_def.marks.items.len), .y = 0 };
+                        const fallback: spatial_mod.Point2D = .{ .x = stage_x(idx, sc_def.marks.items.len), .y = 0 };
+                        const at: spatial_mod.Point2D = if (room) |r| room_point(r, mname, false) orelse fallback else fallback;
                         var found = false;
                         for (sp.graph.waypoints.items) |wp| {
                             if (std.mem.eql(u8, wp.name, mname)) {
@@ -916,7 +917,7 @@ pub const Codegen = struct {
                     for (sc_def.props.items, 0..) |pname, idx| {
                         try mut_self.check_thing_name(pname);
                         const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.intern_entity_checked(pname);
-                        const at: spatial_mod.Point2D = if (room) |r| room_point(r, pname, true) else .{ .x = 10 + stage_x(idx, sc_def.props.items.len), .y = -6 };
+                        const at: spatial_mod.Point2D = if (room) |r| room_point(r, pname, true).? else .{ .x = 10 + stage_x(idx, sc_def.props.items.len), .y = -6 };
                         sp.add_hotspot(pent, sent, at, 10, pname, pname) catch {};
                     }
 
@@ -2876,11 +2877,12 @@ fn check_loop_u16(span: usize) error{JumpOffsetTooLarge}!u16 {
 /// Where the `idx`th of `count` marks (or props, offset by 10) sits along a scene: 20 units
 /// apart from 0, which keeps three within the 1280x720 stage. More than three are spread over
 /// the same 40 units instead, since a fourth at 60 would fall off the right edge (D-100).
-/// Where a room block puts `name` (D-199): its art-pixel position snapped to the world. The
-/// parser has already checked that the block places every mark and prop its scene lists.
-fn room_point(room: parser_mod.RoomDecl, name: []const u8, prop: bool) spatial_mod.Point2D {
+/// Where a room block puts `name` (D-199): its art-pixel position snapped to the world, or
+/// null for a mark a grid's `place` line positions instead (D-201), which the grid moves once
+/// it is compiled. The parser has checked that every other mark and prop is placed.
+fn room_point(room: parser_mod.RoomDecl, name: []const u8, prop: bool) ?spatial_mod.Point2D {
     for (room.places) |p| if (p.prop == prop and std.mem.eql(u8, p.name, name)) return spatial_mod.art_to_world(p.x, p.y);
-    unreachable;
+    return null;
 }
 
 pub fn stage_x(idx: usize, count: usize) i32 {

@@ -2536,6 +2536,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a first block after the file's last room block, rejected so a scene and its layout read together; adding marks and props here, deferred because it edits the `scene` block; grid and backdrop editing, deferred for the same reason.
 
+## D-201 The Grid Editor Owns a Scene's Grid Block, Writes Merged Rectangles, and a Mark Has One Source of Position (2026-11-27, status: accepted; P47-12, follows D-200)
+
+**Context.** P47-12 edits the optional grid overlay (D-054, D-055) that the room editor shows read-only (D-200 item 3). A grid is a `grid <Name> in <Scene>:` block of `size`, `cell`, `origin`, the four automata rates, attribute lines for single cells or rectangles, and `place` lines, all in world units, so one cell of size N covers 4.5N by 3N art pixels. Scoping found that a grid's `place` silently overrides a position the same mark has in a room block (codegen applies grid places after room layout, D-199), and that the spec says a grid origin is non-negative while the parser and `grid.zig` accept any integer. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **Own the block.** The editor rewrites a scene's grid block whole where it stands, or adds a first one directly after the scene's room block, else after its `scene` block, in the file's own line endings. A block with comments asks first; every write is checked with the compiler before it is kept (D-197 item 4, D-200 item 5).
+2. **Merged rectangles.** Each attribute's cells are written as the rectangles a row-then-column merge finds, so a painted floor stays a few lines; the order may differ from a hand-written block.
+3. **One source of position.** The compiler refuses a mark placed by both a room block and a grid `place`, naming both lines. Room blocks are new (P47-11), so no existing script breaks. The grid editor edits `place` lines, and the room editor shows a grid-placed mark as placed by the grid and does not write a position for it.
+4. **Form plus painting.** A form sets size, cell, origin, and the burn, spread, dissipate, and flow rates in world units, with the grid's footprint drawn on the art as they change; painting sets cell attributes and `place` lines.
+
+**Consequences.** Built 2026-11-27 (session 132). A mark a grid places needs no room-block line, so D-199 item 4's every-mark rule counts a grid `place` as placing it; the refusal for a mark placed both ways is at the room line and names the grid's `place`. The room and grid blocks are written by one Studio edit and checked once, since moving a mark onto the grid must change both together; edits on one line are applied grid first so a new room block lands above a new grid block. `bespoke-studio.wasm` went from 532,042 to 554,183 bytes. The language change in item 3 lands with P47-12, with two `d201-grid-placement` conformance cases and the spec's grid section updated; the spec's "non-negative origin" claim is corrected to match the code, which accepts any origin, since a grid over the art's upper or left part needs a negative one (art pixel 0, 0 is world -15, -32). The room editor's place records skip grid-placed marks.
+
+**Alternatives:** editing grid lines in place, rejected as much more splicing for a block authors rarely annotate; one line per cell, rejected because a painted floor would run to hundreds of lines; letting the grid's `place` win silently, rejected because a mark would have two positions in the script and only one would count; painting only, rejected because a grid could not be made from nothing.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

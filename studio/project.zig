@@ -342,6 +342,7 @@ pub const Project = struct {
                 try w.string(pl.name);
                 try w.raw(if (pl.prop) ",\"prop\":true" else ",\"prop\":false");
                 try w.raw(if (pl.placed) ",\"placed\":true" else ",\"placed\":false");
+                try w.raw(if (pl.by_grid) ",\"by_grid\":true" else ",\"by_grid\":false");
                 inline for (.{ "x", "y", "drawn_x", "drawn_y" }) |f| {
                     try w.raw(",\"" ++ f ++ "\":");
                     try w.number(@field(pl, f));
@@ -384,10 +385,25 @@ pub const Project = struct {
                 if (j > 0) try w.raw(",");
                 try w.raw("{\"name\":");
                 try w.string(g.name);
-                inline for (.{ "width", "height", "cell", "origin_x", "origin_y" }) |f| {
+                inline for (.{ "width", "height", "cell", "origin_x", "origin_y", "burn", "spread", "dissipate", "flow" }) |f| {
                     try w.raw(",\"" ++ f ++ "\":");
                     try w.number(@field(g, f));
                 }
+                try w.raw(",\"places\":[");
+                for (g.places, 0..) |gp, k| {
+                    if (k > 0) try w.raw(",");
+                    try w.raw("{\"mark\":");
+                    try w.string(gp.mark);
+                    try w.raw(",\"x\":");
+                    try w.number(gp.x);
+                    try w.raw(",\"y\":");
+                    try w.number(gp.y);
+                    try w.raw("}");
+                }
+                try w.raw("],\"block\":");
+                try self.json_lines(&w, &buf, main_path, dir, g.block);
+                const gpath = table_script(&buf, main_path, dir, g.block.script);
+                try w.raw(if (has_comment(self.find(gpath) orelse "", g.block.line, g.block.end_line)) ",\"comments\":true}" else ",\"comments\":false}");
                 try w.raw(",\"rects\":[");
                 for (g.rects, 0..) |r, k| {
                     if (k > 0) try w.raw(",");
@@ -425,15 +441,35 @@ pub const Project = struct {
         try w.number(lines.end_line);
     }
 
-    /// A room edit as the page sends it: one record per line, fields split by tabs, which no
-    /// name can hold. `scene<TAB>Name` first, then `mark`/`prop<TAB>Name<TAB>x<TAB>y`,
-    /// `area<TAB>Prop<TAB>x<TAB>y<TAB>w<TAB>h`, `walkway<TAB>A<TAB>B`, and
-    /// `exit<TAB>Mark<TAB>Scene<TAB>Mark`, in the order they are to be written. Plain records
-    /// keep a JSON reader, about 60 KB, out of the module.
+    /// A layout edit as the page sends it: one record per line, fields split by tabs, which no
+    /// name can hold. `scene<TAB>Name` first. A `room` record asks for the room block, followed
+    /// by `mark`/`prop<TAB>Name<TAB>x<TAB>y`, `area<TAB>Prop<TAB>x<TAB>y<TAB>w<TAB>h`,
+    /// `walkway<TAB>A<TAB>B`, and `exit<TAB>Mark<TAB>Scene<TAB>Mark`, written in that order
+    /// (P47-03, D-200). A `grid<TAB>Name` record asks for the grid block, with
+    /// `size<TAB>W<TAB>H`, `cell<TAB>N`, `origin<TAB>X<TAB>Y`, `rate<TAB>burn|spread|dissipate|flow<TAB>N`,
+    /// `set<TAB>attribute<TAB>x<TAB>y` once per set cell, and `place<TAB>Mark<TAB>x<TAB>y`
+    /// (P47-12, D-201). Plain records keep a JSON reader, about 45 KB, out of the module.
+    const GRID_ATTRIBUTES = [_][]const u8{ "flammable", "liquid", "blocking", "burning", "smoke" };
+    const RATES = [_][]const u8{ "burn", "spread", "dissipate", "flow" };
+
+    const GridEdit = struct {
+        name: []const u8,
+        width: u32 = 0,
+        height: u32 = 0,
+        cell: u32 = 0,
+        origin_x: i32 = 0,
+        origin_y: i32 = 0,
+        rates: [4]u32 = .{ 0, 0, 0, 0 },
+        cells: std.ArrayList(struct { attribute: usize, x: u32, y: u32 }) = .empty,
+        places: std.ArrayList([]const u8) = .empty,
+    };
+
     const RoomEdit = struct {
         scene: []const u8 = "",
-        /// The block's lines after its header, already in the language.
+        room: bool = false,
+        /// The room block's lines after its header, already in the language.
         lines: std.ArrayList([]const u8) = .empty,
+        grid: ?GridEdit = null,
     };
 
     fn parse_room_edit(a: Allocator, text: []const u8) !?RoomEdit {
@@ -455,32 +491,102 @@ pub const Project = struct {
                     return std.fmt.parseInt(u32, t, 10) catch null;
                 }
             }.of;
-            if (std.mem.eql(u8, kind, "scene") and n == 2) {
+            const is = struct {
+                fn of(k: []const u8, want: []const u8) bool {
+                    return std.mem.eql(u8, k, want);
+                }
+            }.of;
+            if (is(kind, "scene") and n == 2) {
                 edit.scene = f[1];
-            } else if ((std.mem.eql(u8, kind, "mark") or std.mem.eql(u8, kind, "prop")) and n == 4) {
+            } else if (is(kind, "room") and n == 1) {
+                edit.room = true;
+            } else if ((is(kind, "mark") or is(kind, "prop")) and n == 4) {
                 const x = num(f[2]) orelse return null;
                 const y = num(f[3]) orelse return null;
+                edit.room = true;
                 try edit.lines.append(a, try std.fmt.allocPrint(a, "  {s} {s} at {d} {d}", .{ kind, try room_name(a, f[1]), x, y }));
-            } else if (std.mem.eql(u8, kind, "area") and n == 6) {
+            } else if (is(kind, "area") and n == 6) {
                 var v: [4]u32 = undefined;
                 for (&v, f[2..6]) |*out, t| out.* = num(t) orelse return null;
+                edit.room = true;
                 try edit.lines.append(a, try std.fmt.allocPrint(a, "  area {s}: {d} {d} {d} {d}", .{ try room_name(a, f[1]), v[0], v[1], v[2], v[3] }));
-            } else if (std.mem.eql(u8, kind, "walkway") and n == 3) {
+            } else if (is(kind, "walkway") and n == 3) {
+                edit.room = true;
                 try edit.lines.append(a, try std.fmt.allocPrint(a, "  walkway {s} to {s}", .{ try room_name(a, f[1]), try room_name(a, f[2]) }));
-            } else if (std.mem.eql(u8, kind, "exit") and n == 4) {
+            } else if (is(kind, "exit") and n == 4) {
+                edit.room = true;
                 try edit.lines.append(a, try std.fmt.allocPrint(a, "  exit {s} to {s} at {s}", .{ try room_name(a, f[1]), try room_name(a, f[2]), try room_name(a, f[3]) }));
+            } else if (is(kind, "grid") and n == 2) {
+                if (edit.grid != null or !is_image_word(f[1])) return null;
+                edit.grid = .{ .name = f[1] };
+            } else if (edit.grid) |*g| {
+                if (is(kind, "size") and n == 3) {
+                    g.width = num(f[1]) orelse return null;
+                    g.height = num(f[2]) orelse return null;
+                } else if (is(kind, "cell") and n == 2) {
+                    g.cell = num(f[1]) orelse return null;
+                } else if (is(kind, "origin") and n == 3) {
+                    g.origin_x = std.fmt.parseInt(i32, f[1], 10) catch return null;
+                    g.origin_y = std.fmt.parseInt(i32, f[2], 10) catch return null;
+                } else if (is(kind, "rate") and n == 3) {
+                    const i = for (RATES, 0..) |r, k| {
+                        if (is(f[1], r)) break k;
+                    } else return null;
+                    g.rates[i] = num(f[2]) orelse return null;
+                } else if (is(kind, "set") and n == 4) {
+                    const i = for (GRID_ATTRIBUTES, 0..) |r, k| {
+                        if (is(f[1], r)) break k;
+                    } else return null;
+                    try g.cells.append(a, .{ .attribute = i, .x = num(f[2]) orelse return null, .y = num(f[3]) orelse return null });
+                } else if (is(kind, "place") and n == 4) {
+                    try g.places.append(a, try std.fmt.allocPrint(a, "  place {s} {d} {d}", .{ try atom_name(a, f[1]), num(f[2]) orelse return null, num(f[3]) orelse return null }));
+                } else return null;
             } else return null;
         }
-        if (edit.scene.len == 0) return null;
+        if (edit.scene.len == 0 or (!edit.room and edit.grid == null)) return null;
+        if (edit.grid) |g| if (g.width == 0 or g.height == 0 or g.cell == 0) return null;
         return edit;
     }
 
-    /// Writes one scene's room block from `request` (a `RoomEdit`), P47-03, D-200: the
-    /// block is rewritten whole where it stands, or a first block goes after the scene's own
-    /// `scene` block, in that file's line endings. The project is then checked; when it does
-    /// not check, the script is put back. `result` holds `{"written":true,"script":..,"line":N}`
-    /// when kept, `{"written":false,"refused":".."}` for a request refused before the check,
-    /// or the check's JSON.
+    /// The grid block's lines (D-201): geometry, the rates that are set, each attribute's cells
+    /// as merged rectangles in a fixed order, then the `place` lines.
+    fn grid_lines(a: Allocator, scene: []const u8, g: GridEdit) !std.ArrayList([]const u8) {
+        var lines: std.ArrayList([]const u8) = .empty;
+        try lines.append(a, try std.fmt.allocPrint(a, "grid {s} in {s}:", .{ g.name, try atom_name(a, scene) }));
+        try lines.append(a, try std.fmt.allocPrint(a, "  size {d} {d}", .{ g.width, g.height }));
+        try lines.append(a, try std.fmt.allocPrint(a, "  cell {d}", .{g.cell}));
+        if (g.origin_x != 0 or g.origin_y != 0) try lines.append(a, try std.fmt.allocPrint(a, "  origin {d} {d}", .{ g.origin_x, g.origin_y }));
+        for (RATES, g.rates) |name, v| if (v != 0) try lines.append(a, try std.fmt.allocPrint(a, "  {s} {d}", .{ name, v }));
+        const count = @as(usize, g.width) * g.height;
+        if (count > 4096) return error.GridTooLarge;
+        const set = try a.alloc(bool, count);
+        const used = try a.alloc(bool, count);
+        for (GRID_ATTRIBUTES, 0..) |name, attribute| {
+            @memset(set, false);
+            @memset(used, false);
+            for (g.cells.items) |c| if (c.attribute == attribute and c.x < g.width and c.y < g.height) {
+                set[@as(usize, c.y) * g.width + c.x] = true;
+            };
+            for (merge_rects(g.width, g.height, set, used, a) catch return error.OutOfMemory) |r| {
+                if (r.w == 1 and r.h == 1)
+                    try lines.append(a, try std.fmt.allocPrint(a, "  {s} {d} {d}", .{ name, r.x, r.y }))
+                else
+                    try lines.append(a, try std.fmt.allocPrint(a, "  {s} {d} {d} {d} {d}", .{ name, r.x, r.y, r.w, r.h }));
+            }
+        }
+        try lines.appendSlice(a, g.places.items);
+        return lines;
+    }
+
+    const Edit = struct { path: []const u8, from: u32, to: u32, insert: bool, order: u8, lines: []const []const u8 };
+
+    /// Writes one scene's room block, grid block, or both from `request` (`RoomEdit`), P47-03,
+    /// P47-12, D-200, D-201: each block is rewritten whole where it stands, or a first one goes
+    /// after the scene's room block (a grid) or `scene` block, in that file's line endings.
+    /// Both are checked together; when the project does not check, every touched script is put
+    /// back. `result` holds `{"written":true,"script":..}` naming the last script written,
+    /// `{"written":false,"refused":".."}` for a request refused before the check, or the
+    /// check's JSON.
     pub fn write_room(self: *Project, main_path: []const u8, request: []const u8) !bool {
         self.result.clearRetainingCapacity();
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -499,31 +605,76 @@ pub const Project = struct {
             if (std.mem.eql(u8, sc.name, edit.scene)) break sc;
         } else return self.refuse_room("the script declares no such scene with 'scene <Name>:'");
 
-        // The block's lines, names written as the language reads them.
-        var lines: std.ArrayList([]const u8) = .empty;
-        try lines.append(a, try std.fmt.allocPrint(a, "room {s}:", .{try room_name(a, scene.name)}));
-        try lines.appendSlice(a, edit.lines.items);
-
         var buf: [1024]u8 = undefined;
-        const target = scene.block orelse scene.declared;
-        const path = try a.dupe(u8, table_script(&buf, main_path, dir, target.script));
-        const old = try self.allocator.dupe(u8, self.find(path) orelse return self.refuse_room("the scene's script is not in the project"));
-        defer self.allocator.free(old);
-        const spliced = if (scene.block) |b|
-            try replace_lines(a, old, b.line, b.end_line, lines.items)
-        else
-            try insert_block(a, old, scene.declared.end_line, lines.items);
-        try self.add(path, spliced.bytes);
+        var edits: std.ArrayList(Edit) = .empty;
+        if (edit.room) {
+            const target = scene.block orelse scene.declared;
+            const path = try a.dupe(u8, table_script(&buf, main_path, dir, target.script));
+            var lines: std.ArrayList([]const u8) = .empty;
+            // A block with no lines is no block: every mark is placed by the grid.
+            if (edit.lines.items.len > 0) {
+                try lines.append(a, try std.fmt.allocPrint(a, "room {s}:", .{try room_name(a, scene.name)}));
+                try lines.appendSlice(a, edit.lines.items);
+            }
+            if (scene.block) |b| {
+                try edits.append(a, .{ .path = path, .from = b.line, .to = b.end_line, .insert = false, .order = 1, .lines = lines.items });
+            } else if (lines.items.len > 0) {
+                try edits.append(a, .{ .path = path, .from = scene.declared.end_line, .to = 0, .insert = true, .order = 1, .lines = lines.items });
+            }
+        }
+        if (edit.grid) |g| {
+            const lines = grid_lines(a, scene.name, g) catch |err| switch (err) {
+                error.GridTooLarge => return self.refuse_room("a grid holds at most 4096 cells"),
+                else => return err,
+            };
+            if (scene.grids.len > 0) {
+                const b = scene.grids[0].block;
+                const path = try a.dupe(u8, table_script(&buf, main_path, dir, b.script));
+                try edits.append(a, .{ .path = path, .from = b.line, .to = b.end_line, .insert = false, .order = 0, .lines = lines.items });
+            } else {
+                // After the room block as it stands, else after the scene block; a room block
+                // added in this same edit goes in at that point too, so the grid is applied
+                // first and the room block lands above it.
+                const after = scene.block orelse scene.declared;
+                const path = try a.dupe(u8, table_script(&buf, main_path, dir, after.script));
+                try edits.append(a, .{ .path = path, .from = after.end_line, .to = 0, .insert = true, .order = 0, .lines = lines.items });
+            }
+        }
+        if (edits.items.len == 0) return self.refuse_room("the edit changes nothing");
+        // Later lines first, so earlier line numbers still hold; at one line, the grid first.
+        std.mem.sort(Edit, edits.items, {}, struct {
+            fn before(_: void, x: Edit, y: Edit) bool {
+                const c = std.mem.order(u8, x.path, y.path);
+                if (c != .eq) return c == .lt;
+                if (x.from != y.from) return x.from > y.from;
+                return x.order < y.order;
+            }
+        }.before);
+
+        var saved: std.ArrayList(struct { path: []const u8, bytes: []u8 }) = .empty;
+        defer for (saved.items) |s| self.allocator.free(s.bytes);
+        for (edits.items) |e| {
+            const now = self.find(e.path) orelse return self.refuse_room("the scene's script is not in the project");
+            const seen = for (saved.items) |s| {
+                if (std.mem.eql(u8, s.path, e.path)) break true;
+            } else false;
+            if (!seen) try saved.append(a, .{ .path = e.path, .bytes = try self.allocator.dupe(u8, now) });
+            const spliced = if (e.insert) try insert_block(a, now, e.from, e.lines) else try replace_lines(a, now, e.from, e.to, e.lines);
+            try self.add(e.path, spliced.bytes);
+        }
         if (!try self.check(main_path)) {
-            try self.add(path, old);
+            for (saved.items) |s| try self.add(s.path, s.bytes);
             return false;
         }
         self.result.clearRetainingCapacity();
         var w = Json{ .list = &self.result, .allocator = self.allocator };
-        try w.raw("{\"written\":true,\"script\":");
-        try w.string(path);
-        try w.raw(",\"line\":");
-        try w.number(spliced.line);
+        try w.raw("{\"written\":true,\"scripts\":[");
+        for (saved.items, 0..) |s, i| {
+            if (i > 0) try w.raw(",");
+            try w.string(s.path);
+        }
+        try w.raw("],\"script\":");
+        try w.string(saved.items[0].path);
         try w.raw("}");
         return true;
     }
@@ -653,6 +804,39 @@ fn room_name(a: Allocator, name: []const u8) ![]const u8 {
     }
     if (bare) return name;
     return std.fmt.allocPrint(a, "\"{s}\"", .{name});
+}
+
+/// A name as a grid line takes it (`take_atom`): one word bare, anything else quoted.
+fn atom_name(a: Allocator, name: []const u8) ![]const u8 {
+    if (std.mem.indexOfScalar(u8, name, '"') != null) return error.UnwritableName;
+    if (is_image_word(name) and !std.mem.eql(u8, name, "to") and !std.mem.eql(u8, name, "at")) return name;
+    return std.fmt.allocPrint(a, "\"{s}\"", .{name});
+}
+
+const Rect = struct { x: u32, y: u32, w: u32, h: u32 };
+
+/// The rectangles covering every `set` cell (D-201 item 2): from each unused set cell in row
+/// order, as wide as the row allows, then as tall as full rows of that width allow.
+fn merge_rects(width: u32, height: u32, set: []const bool, used: []bool, a: Allocator) ![]Rect {
+    var out: std.ArrayList(Rect) = .empty;
+    for (0..height) |yy| for (0..width) |xx| {
+        const at = yy * width + xx;
+        if (!set[at] or used[at]) continue;
+        var w: usize = 1;
+        while (xx + w < width and set[at + w] and !used[at + w]) w += 1;
+        var h: usize = 1;
+        grow: while (yy + h < height) : (h += 1) {
+            for (0..w) |k| {
+                const c = (yy + h) * width + xx + k;
+                if (!set[c] or used[c]) break :grow;
+            }
+        }
+        for (0..h) |r| for (0..w) |k| {
+            used[(yy + r) * width + xx + k] = true;
+        };
+        try out.append(a, .{ .x = @intCast(xx), .y = @intCast(yy), .w = @intCast(w), .h = @intCast(h) });
+    };
+    return out.items;
 }
 
 /// The file's line ending: CRLF when its first line ends so, else LF (D-197 item 1).
@@ -1122,7 +1306,7 @@ test "a room edit the compiler refuses puts the script back" {
     try std.testing.expect(!try p.write_room("main.bespoke", "scene\tYard\nmark\tGate\t1\t1\n"));
     try std.testing.expect(result_has(&p, "does not place mark 'Well'"));
     try std.testing.expectEqualStrings(before, p.find("main.bespoke").?);
-    try std.testing.expect(!try p.write_room("main.bespoke", "scene\tCellar\n"));
+    try std.testing.expect(!try p.write_room("main.bespoke", "scene\tCellar\nroom\n"));
     try std.testing.expect(result_has(&p, "no such scene"));
     try std.testing.expect(!try p.write_room("main.bespoke", "scene\tYard\nmark\tGate\tx\t1\n"));
     try std.testing.expect(result_has(&p, "not one the Studio understands"));
@@ -1137,4 +1321,36 @@ test "room names are written bare when the lexer reads them back, quoted otherwi
     try std.testing.expectEqualStrings("\"Keeper's Lodge\"", try room_name(a, "Keeper's Lodge"));
     try std.testing.expect(has_comment("a\n  # note\nb\n", 1, 3));
     try std.testing.expect(!has_comment("a \"#1\"\nb\n", 1, 2));
+}
+
+test "the grid editor writes merged rectangles and places, beside the room block, checked together" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    const before = "scene Yard:\n  marks: Gate, Well\n\nroom Yard:\n  mark Gate at 40 120\n  mark Well at 200 132\n\nroutine Idle(Gate):\n  wait 1 ticks\n";
+    try p.add("main.bespoke", before);
+    // Moving Well onto the grid takes it out of the room block in the same edit.
+    const edit = "scene\tYard\nroom\nmark\tGate\t40\t120\ngrid\tFloor\nsize\t4\t3\ncell\t10\norigin\t-10\t-20\nrate\tburn\t6\n" ++
+        "set\tflammable\t0\t0\nset\tflammable\t1\t0\nset\tflammable\t0\t1\nset\tflammable\t1\t1\nset\tblocking\t3\t2\nplace\tWell\t2\t1\n";
+    try std.testing.expect(try p.write_room("main.bespoke", edit));
+    try std.testing.expectEqualStrings("scene Yard:\n  marks: Gate, Well\n\nroom Yard:\n  mark Gate at 40 120\n\ngrid Floor in Yard:\n  size 4 3\n  cell 10\n  origin -10 -20\n  burn 6\n  flammable 0 0 2 2\n  blocking 3 2\n  place Well 2 1\n\nroutine Idle(Gate):\n  wait 1 ticks\n", p.find("main.bespoke").?);
+    try std.testing.expect(try p.rooms("main.bespoke"));
+    try std.testing.expect(result_has(&p, "\"by_grid\":true"));
+    try std.testing.expect(result_has(&p, "\"places\":[{\"mark\":\"Well\",\"x\":2,\"y\":1}]"));
+    const listed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    listed.deinit();
+
+    // Rewritten in place; a mark in both the room block and the grid is refused, and put back.
+    const now = try std.testing.allocator.dupe(u8, p.find("main.bespoke").?);
+    defer std.testing.allocator.free(now);
+    try std.testing.expect(!try p.write_room("main.bespoke", "scene\tYard\nroom\nmark\tGate\t40\t120\nmark\tWell\t1\t1\n"));
+    try std.testing.expect(result_has(&p, "placed twice"));
+    try std.testing.expectEqualStrings(now, p.find("main.bespoke").?);
+}
+
+test "a first room and grid block in one edit land in order after the scene" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("main.bespoke", "scene Yard:\n  marks: Gate\n");
+    try std.testing.expect(try p.write_room("main.bespoke", "scene\tYard\nroom\nmark\tGate\t40\t120\ngrid\tFloor\nsize\t2\t2\ncell\t10\n"));
+    try std.testing.expectEqualStrings("scene Yard:\n  marks: Gate\n\nroom Yard:\n  mark Gate at 40 120\n\ngrid Floor in Yard:\n  size 2 2\n  cell 10\n", p.find("main.bespoke").?);
 }

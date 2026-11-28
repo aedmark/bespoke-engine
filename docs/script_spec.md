@@ -290,7 +290,7 @@ grid HallFloor in "Great Hall":
   place HallStair 6 0
 ```
 
-`size W H` and `cell N` are required; non-negative `origin X Y` defaults to `0 0`. Cell (x, y) covers room coordinates from `origin + x*N` up to, not including, `origin + (x+1)*N`. An attribute line names one cell, or a rectangle when it adds a width and height. The attributes are `flammable`, `liquid`, `blocking`, `burning`, and `smoke`. `place` moves a mark of the same room to the centre of a cell. A grid holds at most 4096 cells, and a room has at most one grid; quote multi-word room names.
+`size W H` and `cell N` are required; `origin X Y` defaults to `0 0` and may be negative, which a grid over the art's upper or left part needs (art pixel 0, 0 is world -15, -32; D-201). Cell (x, y) covers room coordinates from `origin + x*N` up to, not including, `origin + (x+1)*N`. An attribute line names one cell, or a rectangle when it adds a width and height. The attributes are `flammable`, `liquid`, `blocking`, `burning`, and `smoke`. `place` moves a mark of the same room to the centre of a cell. A mark has one source of position: a room block that places it and a grid that places it is a compile error naming the room line (D-201), and a mark a grid places needs no line in its scene's room block. A grid holds at most 4096 cells, and a room has at most one grid; quote multi-word room names.
 
 Each set attribute is a fact on the grid entity: `CellFlammable(HallFloor, index)`, `CellLiquid`, or `CellBlocking`, where `index` is `y * W + x`. The host lifecycle writes the declared layout once, so later changes survive save, rewind, and re-initialisation. A mark standing in a `blocking` cell is treated like `WaypointBlocked`: scripted walks plan around it, and a walk to it is refused.
 
@@ -660,7 +660,7 @@ room Yard:
   exit Well to Hall at Door
 ```
 
-- `mark <Mark> at <x> <y>` and `prop <Prop> at <x> <y>` place a mark or prop the scene lists, in art pixels on the 320x180 art (x 0 to 319, y 0 to 179). Once a scene has a room block, every mark and prop it lists needs a line there, and naming one it does not list is an error. The compiler snaps each position to the nearest world unit, which is 4.5 art pixels across and 3 down, so a mark sits within 2 art pixels of the spot given.
+- `mark <Mark> at <x> <y>` and `prop <Prop> at <x> <y>` place a mark or prop the scene lists, in art pixels on the 320x180 art (x 0 to 319, y 0 to 179). Once a scene has a room block, every mark and prop it lists needs a line there, except a mark a grid's `place` line positions (D-201), which must not have one; naming one the scene does not list is an error. The compiler snaps each position to the nearest world unit, which is 4.5 art pixels across and 3 down, so a mark sits within 2 art pixels of the spot given.
 - `walkway <Mark> to <Mark>` joins two of the scene's marks both ways. A scene with any walkway line has only its declared walkways; without one, each mark joins the next in its `marks:` order, as before.
 - `exit <Mark> to <Scene> at <Mark>`: a plain walk that ends on the first mark takes the player to the other scene, standing on the second mark; a walk asked for while standing on it leaves at once (D-094). A mark has at most one exit. Exits work on the command line, in the desktop window, and in the browser; a host's own exits are taken first.
 - `area <Prop>: x y w h` is the line described under pixel art; it may sit in the room block or at top level.

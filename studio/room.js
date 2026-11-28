@@ -2,8 +2,11 @@
 // scenes the main script declares, and a Room window lays one out over its backdrop: move marks
 // and props, draw a prop's area, join marks with walkways, and set exits. Each change is
 // written by the Studio module as that scene's whole room block (rewritten in place, or added
-// after its `scene` block), checked with the compiler, and kept only if it checks. The grid and
-// the backdrop are shown, not edited (D-200 items 3 and 4).
+// after its `scene` block), checked with the compiler, and kept only if it checks. The Grid tool
+// (P47-12, D-201) paints cell attributes and places marks on cells, and a settings form sets the
+// grid's size, cell, origin, and rates; the grid block is written whole like the room block, and
+// a mark moved onto the grid leaves the room block in the same checked edit. The backdrop is
+// shown, not chosen (D-200 item 4).
 //
 // Marks are drawn where the engine draws them: a position snaps to the nearest world unit
 // (`spatial.art_to_world`) and back to the art (`spatial.world_to_art`). The two functions below
@@ -127,14 +130,57 @@ function createRooms(desk, screen, hooks) {
     return ed.win;
   }
 
+  const ATTRIBUTES = ['flammable', 'liquid', 'blocking', 'burning', 'smoke'];
+  const RATES = ['burn', 'spread', 'dissipate', 'flow'];
+  const FILL = { blocking: 'rgba(28,27,31,0.45)', liquid: 'rgba(58,102,144,0.45)', flammable: 'rgba(208,96,42,0.35)', burning: 'rgba(208,96,42,0.7)', smoke: 'rgba(169,163,152,0.6)' };
+
+  function gridOf(g) {
+    if (!g) return null;
+    const cells = {};
+    for (const a of ATTRIBUTES) cells[a] = new Set();
+    for (const r of g.rects) {
+      for (let y = r.y; y < r.y + r.height; y += 1) for (let x = r.x; x < r.x + r.width; x += 1) if (cells[r.attribute]) cells[r.attribute].add(`${x},${y}`);
+    }
+    return {
+      name: g.name, width: g.width, height: g.height, cell: g.cell, origin_x: g.origin_x, origin_y: g.origin_y,
+      rates: { burn: g.burn, spread: g.spread, dissipate: g.dissipate, flow: g.flow },
+      cells, places: g.places.map((pl) => ({ ...pl })), comments: g.block.comments,
+    };
+  }
+
   function modelOf(sc) {
     return {
-      places: sc.places.map((p) => ({ name: p.name, prop: p.prop, x: p.x, y: p.y })),
+      places: sc.places.map((p) => ({ name: p.name, prop: p.prop, x: p.x, y: p.y, by_grid: p.by_grid })),
       areas: sc.areas.map((a) => ({ ...a })),
       walkways: sc.walkways.map(([a, b]) => [a, b]),
       exits: sc.exits.map((e) => ({ ...e })),
       chained: sc.chained,
+      grid: gridOf(sc.grids[0]),
     };
+  }
+
+  function cloneModel(m) {
+    const out = structuredClone({ ...m, grid: null });
+    if (m.grid) {
+      out.grid = { ...structuredClone({ ...m.grid, cells: null }), cells: {} };
+      for (const a of ATTRIBUTES) out.grid.cells[a] = new Set(m.grid.cells[a]);
+    }
+    return out;
+  }
+
+  // A grid cell's world rectangle, on the art.
+  function cellRect(g, x, y) {
+    const a = worldToArt({ x: g.origin_x + x * g.cell, y: g.origin_y + y * g.cell });
+    const b = worldToArt({ x: g.origin_x + (x + 1) * g.cell, y: g.origin_y + (y + 1) * g.cell });
+    return { x: a.x, y: a.y, w: Math.max(1, b.x - a.x), h: Math.max(1, b.y - a.y) };
+  }
+
+  // The grid cell under art pixel `p`, or null outside the grid.
+  function cellAt(g, p) {
+    const w = artToWorld(p.x, p.y);
+    const x = Math.floor((w.x - g.origin_x) / g.cell);
+    const y = Math.floor((w.y - g.origin_y) / g.cell);
+    return x >= 0 && y >= 0 && x < g.width && y < g.height ? { x, y } : null;
   }
 
   // The default chain as explicit walkways, so a first walkway edit keeps what was joined.
@@ -145,10 +191,27 @@ function createRooms(desk, screen, hooks) {
     return out;
   }
 
-  // The edit records the module writes as the block (studio/project.zig, `RoomEdit`).
-  function recordsOf(name, model) {
+  // The edit records the module writes as the blocks (studio/project.zig, `RoomEdit`): the
+  // room block when `which.room`, the grid block when `which.grid`. A mark the grid places has
+  // no room line (D-201 item 3).
+  function recordsOf(name, model, which = { room: true }) {
     const out = [`scene\t${name}`];
-    for (const p of model.places.filter((q) => !q.prop)) out.push(`mark\t${p.name}\t${p.x}\t${p.y}`);
+    if (which.grid && model.grid) {
+      const g = model.grid;
+      out.push(`grid\t${g.name}`, `size\t${g.width}\t${g.height}`, `cell\t${g.cell}`, `origin\t${g.origin_x}\t${g.origin_y}`);
+      for (const r of RATES) if (g.rates[r]) out.push(`rate\t${r}\t${g.rates[r]}`);
+      for (const a of ATTRIBUTES) {
+        for (const k of g.cells[a]) {
+          const [x, y] = k.split(',').map(Number);
+          if (x < g.width && y < g.height) out.push(`set\t${a}\t${x}\t${y}`);
+        }
+      }
+      for (const pl of g.places) out.push(`place\t${pl.mark}\t${pl.x}\t${pl.y}`);
+    }
+    if (!which.room) return `${out.join('\n')}\n`;
+    out.push('room');
+    const onGrid = new Set(model.grid ? model.grid.places.map((pl) => pl.mark) : []);
+    for (const p of model.places.filter((q) => !q.prop && !onGrid.has(q.name))) out.push(`mark\t${p.name}\t${p.x}\t${p.y}`);
     for (const p of model.places.filter((q) => q.prop)) out.push(`prop\t${p.name}\t${p.x}\t${p.y}`);
     for (const a of model.areas.filter((q) => q.in_block)) out.push(`area\t${a.prop}\t${a.x}\t${a.y}\t${a.w}\t${a.h}`);
     if (!model.chained) for (const [a, b] of model.walkways) out.push(`walkway\t${a}\t${b}`);
@@ -162,6 +225,7 @@ function createRooms(desk, screen, hooks) {
       scene: sc,
       model: modelOf(sc),
       tool: 'move',
+      paint: 'flammable', // the Grid tool's attribute, 'erase', or 'place'
       zoom: 2,
       selected: null, // { name, prop }
       drag: null,
@@ -202,7 +266,15 @@ function createRooms(desk, screen, hooks) {
       return E.model.places.find((p) => p.name === name && p.prop === prop);
     }
 
+    // Where a place is drawn: its snapped position, or its cell's centre when the grid
+    // places it (D-054).
     function drawnOf(p) {
+      const g = E.model.grid;
+      const gp = g && !p.prop && g.places.find((q) => q.mark === p.name);
+      if (gp) {
+        const half = Math.trunc(g.cell / 2);
+        return worldToArt({ x: g.origin_x + gp.x * g.cell + half, y: g.origin_y + gp.y * g.cell + half });
+      }
       return snap(p.x, p.y);
     }
 
@@ -214,14 +286,36 @@ function createRooms(desk, screen, hooks) {
       ctx.imageSmoothingEnabled = false;
       if (E.backdrop) ctx.drawImage(back, 0, 0, W, H);
       else { ctx.fillStyle = '#1c2028'; ctx.fillRect(0, 0, W, H); }
-      // Grid cells, read-only (D-200 item 3): world rectangles mapped onto the art.
-      for (const g of E.scene.grids) {
-        for (const r of g.rects) {
-          const a = worldToArt({ x: g.origin_x + r.x * g.cell, y: g.origin_y + r.y * g.cell });
-          const b = worldToArt({ x: g.origin_x + (r.x + r.width) * g.cell, y: g.origin_y + (r.y + r.height) * g.cell });
-          ctx.fillStyle = { blocking: 'rgba(28,27,31,0.35)', liquid: 'rgba(58,102,144,0.35)', flammable: 'rgba(208,96,42,0.3)', burning: 'rgba(208,96,42,0.6)', smoke: 'rgba(169,163,152,0.5)' }[r.attribute] || 'rgba(244,240,228,0.25)';
-          ctx.fillRect(a.x * z, a.y * z, Math.max(1, b.x - a.x) * z, Math.max(1, b.y - a.y) * z);
+      // Grid cells: each set attribute filled, and the cell lines while the Grid tool is on.
+      const g = E.model.grid;
+      if (g) {
+        for (const a of ATTRIBUTES) {
+          ctx.fillStyle = FILL[a];
+          for (const k of g.cells[a]) {
+            const [x, y] = k.split(',').map(Number);
+            const r = cellRect(g, x, y);
+            ctx.fillRect(r.x * z, r.y * z, r.w * z, r.h * z);
+          }
         }
+        if (E.tool === 'grid' && !E.preview) {
+          ctx.strokeStyle = 'rgba(244,240,228,0.35)';
+          ctx.lineWidth = 1;
+          for (let y = 0; y < g.height; y += 1) {
+            for (let x = 0; x < g.width; x += 1) {
+              const r = cellRect(g, x, y);
+              ctx.strokeRect(r.x * z + 0.5, r.y * z + 0.5, r.w * z - 1, r.h * z - 1);
+            }
+          }
+        }
+      }
+      // The settings form's footprint, as typed.
+      if (E.preview && E.preview.cell > 0 && E.preview.width > 0 && E.preview.height > 0) {
+        const pv = E.preview;
+        const a0 = worldToArt({ x: pv.origin_x, y: pv.origin_y });
+        const b0 = worldToArt({ x: pv.origin_x + pv.width * pv.cell, y: pv.origin_y + pv.height * pv.cell });
+        ctx.strokeStyle = '#d0602a';
+        ctx.lineWidth = Math.max(1, z);
+        ctx.strokeRect(a0.x * z, a0.y * z, (b0.x - a0.x) * z, (b0.y - a0.y) * z);
       }
       // Areas: in the block solid, at top level dashed (edited where they are written).
       for (const a of E.model.areas) {
@@ -299,18 +393,19 @@ function createRooms(desk, screen, hooks) {
 
     // Writes the model as the scene's block. A refusal puts the model back and says why; the
     // module has already put the script back (D-197 item 4).
-    async function commit(model) {
-      if (E.scene.block && E.scene.block.comments && !E.commentsOk) {
+    async function commit(model, which = { room: true }) {
+      const gridComments = which.grid && E.model.grid && E.model.grid.comments;
+      if (((which.room && E.scene.block && E.scene.block.comments) || gridComments) && !E.commentsOk) {
         const pick = await desk.requester(E.win, {
-          title: 'Room', lines: [`The room block for ${E.name} in ${E.scene.block.script} has comments.`, 'The editor rewrites the block whole, so they will be lost.'],
+          title: 'Room', lines: [`The ${gridComments ? 'grid' : 'room'} block for ${E.name} has comments.`, 'The editor rewrites the block whole, so they will be lost.'],
           buttons: [{ id: 'rewrite', label: 'Rewrite' }, { id: 'cancel', label: 'Cancel' }],
         });
         if (pick !== 'rewrite') { render(); return false; }
         E.commentsOk = true;
       }
-      const target = (E.scene.block || E.scene.declared).script;
-      const before = hooks.fileBytes(target);
-      const r = hooks.writeRoom(recordsOf(E.name, model));
+      // Every script's bytes before the edit: a room and a grid block may sit in two files.
+      const before = hooks.scriptBytes();
+      const r = hooks.writeRoom(recordsOf(E.name, model, which));
       if (!r) { render(); return false; }
       if (!r.written) {
         E.error = r.refused || r.result.message;
@@ -320,12 +415,10 @@ function createRooms(desk, screen, hooks) {
         return false;
       }
       E.error = '';
-      hooks.scriptWritten(r.script);
-      if (before) {
-        E.undo.push({ path: r.script, bytes: before });
-        if (E.undo.length > UNDO_DEPTH) E.undo.shift();
-        E.redo = [];
-      }
+      for (const path of r.scripts) hooks.scriptWritten(path);
+      E.undo.push(r.scripts.map((path) => ({ path, bytes: before[path] })));
+      if (E.undo.length > UNDO_DEPTH) E.undo.shift();
+      E.redo = [];
       await reload();
       return true;
     }
@@ -343,8 +436,8 @@ function createRooms(desk, screen, hooks) {
     async function stepUndo(from, to) {
       const step = from.pop();
       if (!step) return;
-      to.push({ path: step.path, bytes: hooks.fileBytes(step.path) });
-      hooks.setScript(step.path, step.bytes);
+      to.push(step.map((s) => ({ path: s.path, bytes: hooks.fileBytes(s.path) })));
+      for (const s of step) hooks.setScript(s.path, s.bytes);
       await reload();
     }
 
@@ -354,9 +447,18 @@ function createRooms(desk, screen, hooks) {
       if (e.button !== 0) return;
       e.preventDefault();
       const p = at(e);
+      if (E.tool === 'grid') {
+        await gridDown(p, e);
+        return;
+      }
       if (E.tool === 'move') {
         const q = hit(p);
         E.selected = q ? { name: q.name, prop: q.prop } : null;
+        if (q && onGrid(q)) {
+          render();
+          await desk.requester(E.win, { title: 'Room', lines: [`The grid places ${q.name} on a cell.`, 'Use the Grid tool to move or unplace it.'] });
+          return;
+        }
         if (q) {
           E.drag = { place: q, from: { x: q.x, y: q.y } };
           try { canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event */ }
@@ -383,7 +485,7 @@ function createRooms(desk, screen, hooks) {
         if (!E.selected || E.selected.prop || E.selected.name === q.name) { E.selected = { name: q.name, prop: false }; render(); return; }
         const a = E.selected.name;
         const b = q.name;
-        const model = structuredClone(E.model);
+        const model = cloneModel(E.model);
         if (model.chained) { model.walkways = chainOf(model); model.chained = false; }
         const i = model.walkways.findIndex(([x, y]) => (x === a && y === b) || (x === b && y === a));
         if (i >= 0) model.walkways.splice(i, 1); else model.walkways.push([a, b]);
@@ -396,6 +498,7 @@ function createRooms(desk, screen, hooks) {
     canvas.addEventListener('pointermove', (e) => {
       if (!E.drag) return;
       const p = at(e);
+      if (E.drag.cells) { paintCell(p); return; }
       if (E.drag.place) { E.drag.place.x = p.x; E.drag.place.y = p.y; draw(); return; }
       if (E.drag.rect) {
         const s = E.drag.start;
@@ -407,9 +510,16 @@ function createRooms(desk, screen, hooks) {
       const d = E.drag;
       E.drag = null;
       if (!d) return;
+      if (d.cells) {
+        if (!d.changed) { draw(); return; }
+        const model = cloneModel(E.model);
+        E.model.grid.cells = d.before;
+        await commit(model, { grid: true });
+        return;
+      }
       if (d.place) {
         if (d.place.x === d.from.x && d.place.y === d.from.y) { draw(); return; }
-        const model = structuredClone(E.model);
+        const model = cloneModel(E.model);
         d.place.x = d.from.x;
         d.place.y = d.from.y;
         await commit(model);
@@ -422,7 +532,7 @@ function createRooms(desk, screen, hooks) {
           await desk.requester(E.win, { title: 'Room', lines: [`${d.prop}'s area is written outside the room block.`, 'Change it there, or remove that line and draw it here.'] });
           return;
         }
-        const model = structuredClone(E.model);
+        const model = cloneModel(E.model);
         model.areas = model.areas.filter((a) => a.prop !== d.prop);
         model.areas.push({ prop: d.prop, x: d.rect.x, y: d.rect.y, w: d.rect.w, h: d.rect.h, in_block: true });
         await commit(model);
@@ -430,6 +540,140 @@ function createRooms(desk, screen, hooks) {
     };
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', () => { E.drag = null; draw(); });
+
+    // ---------------------------------------------- the grid (P47-12, D-201)
+
+    function onGrid(q) {
+      return Boolean(!q.prop && E.model.grid && E.model.grid.places.some((pl) => pl.mark === q.name));
+    }
+
+    // A painting stroke sets the chosen attribute (or clears every attribute) on each cell it
+    // crosses; the stroke is written once, when it ends.
+    function paintCell(p) {
+      const g = E.model.grid;
+      const c = cellAt(g, p);
+      if (!c) return;
+      const key = `${c.x},${c.y}`;
+      let changed = false;
+      if (E.paint === 'erase') {
+        for (const a of ATTRIBUTES) if (g.cells[a].delete(key)) changed = true;
+      } else if (!g.cells[E.paint].has(key)) {
+        g.cells[E.paint].add(key);
+        changed = true;
+      }
+      if (changed) { E.drag.changed = true; draw(); }
+    }
+
+    async function gridDown(p, e) {
+      const g = E.model.grid;
+      if (!g) { await openGridForm(); return; }
+      if (E.paint === 'place') {
+        const q = hit(p, false);
+        if (q) { E.selected = { name: q.name, prop: false }; render(); return; }
+        const c = cellAt(g, p);
+        if (!c || !E.selected) return;
+        // The mark leaves the room block and joins the grid in one checked edit.
+        const model = cloneModel(E.model);
+        model.grid.places = model.grid.places.filter((pl) => pl.mark !== E.selected.name);
+        model.grid.places.push({ mark: E.selected.name, x: c.x, y: c.y });
+        E.selected = null;
+        await commit(model, { grid: true, room: Boolean(E.scene.block) });
+        return;
+      }
+      const before = {};
+      for (const a of ATTRIBUTES) before[a] = new Set(g.cells[a]);
+      E.drag = { cells: true, before, changed: false };
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event */ }
+      paintCell(p);
+    }
+
+    async function unplace() {
+      if (!E.selected || !E.model.grid) return;
+      const name = E.selected.name;
+      const model = cloneModel(E.model);
+      const p = model.places.find((q) => q.name === name && !q.prop);
+      const d = drawnOf(p);
+      p.x = d.x;
+      p.y = d.y;
+      model.grid.places = model.grid.places.filter((pl) => pl.mark !== name);
+      E.selected = null;
+      await commit(model, { grid: true, room: Boolean(E.scene.block) });
+    }
+
+    // The grid's geometry and rates (D-201 item 4), in world units, with the footprint drawn
+    // on the art as the fields change. A first grid covers the whole art.
+    let formWin = null;
+    async function openGridForm() {
+      if (formWin) { formWin.toFront(); formWin.activate(); return formWin; }
+      const g = E.model.grid || {
+        name: `${E.name.replace(/[^A-Za-z0-9_]+/g, '') || 'Room'}Grid`.replace(/^[^A-Za-z]/, 'G'),
+        width: 14, height: 12, cell: 5, origin_x: -15, origin_y: -31,
+        rates: { burn: 0, spread: 0, dissipate: 0, flow: 0 }, cells: null, places: [],
+      };
+      const fields = {};
+      const input = (id, label, value) => {
+        const wrap = document.createElement('label');
+        wrap.className = 'line field';
+        wrap.appendChild(desk.label(label));
+        const el = document.createElement('input');
+        el.className = 'strgad';
+        el.name = id;
+        el.value = String(value);
+        el.autocomplete = 'off';
+        el.spellcheck = false;
+        el.setAttribute('aria-label', label);
+        el.addEventListener('keydown', (ev) => ev.stopPropagation());
+        el.addEventListener('input', () => { E.preview = read(); draw(); });
+        wrap.appendChild(el);
+        fields[id] = el;
+        return wrap;
+      };
+      function read() {
+        const n = (id) => Number(fields[id].value.trim());
+        return { name: fields.name.value.trim(), width: n('width'), height: n('height'), cell: n('cell'), origin_x: n('origin_x'), origin_y: n('origin_y'), rates: Object.fromEntries(RATES.map((r) => [r, n(r)])) };
+      }
+      const a = screen.area.getBoundingClientRect();
+      formWin = desk.window(screen, {
+        id: `grid-form:${E.name}`, title: `Grid ${E.name}`, x: Math.max(0, Math.min(260, a.width - 380)), y: 70, w: Math.min(380, a.width), h: Math.min(520, a.height - 70), minW: 220, minH: 200,
+        onMessage: async (msg) => {
+          if (msg.kind === 'close' || (msg.kind === 'gadget' && msg.id === 'grid-cancel')) { closeForm(); return; }
+          if (msg.kind !== 'gadget' || msg.id !== 'grid-ok') return;
+          const v = read();
+          const whole = (x, lo) => Number.isInteger(x) && x >= lo;
+          if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(v.name) || !whole(v.width, 1) || !whole(v.height, 1) || !whole(v.cell, 1) || !Number.isInteger(v.origin_x) || !Number.isInteger(v.origin_y) || RATES.some((r) => !whole(v.rates[r], 0))) {
+            await desk.requester(formWin, { title: 'Grid', lines: ['The name is one word; size and cell are whole numbers from 1, origin is whole, and rates are whole from 0.'] });
+            return;
+          }
+          if (v.width * v.height > 4096) { await desk.requester(formWin, { title: 'Grid', lines: [`${v.width}x${v.height} is ${v.width * v.height} cells; a grid holds at most 4096.`] }); return; }
+          const model = cloneModel(E.model);
+          const cells = model.grid ? model.grid.cells : Object.fromEntries(ATTRIBUTES.map((x) => [x, new Set()]));
+          const places = model.grid ? model.grid.places.filter((pl) => pl.x < v.width && pl.y < v.height) : [];
+          model.grid = { ...v, cells, places, comments: model.grid ? model.grid.comments : false };
+          closeForm();
+          // A place cut off by a smaller grid leaves the mark unplaced, which the room block
+          // must then hold, so both blocks are written when a room block exists.
+          await commit(model, { grid: true, room: Boolean(E.scene.block) });
+        },
+      });
+      const body = [input('name', 'Name', g.name), input('width', 'Width', g.width), input('height', 'Height', g.height), input('cell', 'Cell', g.cell), input('origin_x', 'Origin x', g.origin_x), input('origin_y', 'Origin y', g.origin_y)];
+      for (const r of RATES) body.push(input(r, r.charAt(0).toUpperCase() + r.slice(1), g.rates[r]));
+      body.push(line('World units; rates in ticks, 0 off.'));
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.append(desk.button(formWin, 'grid-ok', E.model.grid ? 'Set' : 'Add grid'), desk.button(formWin, 'grid-cancel', 'Cancel'));
+      body.push(row);
+      formWin.body.replaceChildren(...body);
+      E.preview = read();
+      draw();
+      return formWin;
+    }
+
+    function closeForm() {
+      if (formWin) formWin.close();
+      formWin = null;
+      E.preview = null;
+      draw();
+    }
 
     // ---------------------------------------------- the window
 
@@ -446,7 +690,7 @@ function createRooms(desk, screen, hooks) {
       const n = cols(E.win);
       const tools = document.createElement('div');
       tools.className = 'row';
-      for (const [id, text] of [['move', 'Move'], ['walkway', 'Walkway'], ['exit', 'Exit'], ['area', 'Area']]) {
+      for (const [id, text] of [['move', 'Move'], ['walkway', 'Walkway'], ['exit', 'Exit'], ['area', 'Area'], ['grid', 'Grid']]) {
         const b = desk.button(E.win, `tool:${id}`, text);
         if (E.tool === id) b.classList.add('selected');
         b.setAttribute('aria-pressed', String(E.tool === id));
@@ -464,8 +708,26 @@ function createRooms(desk, screen, hooks) {
         walkway: E.selected ? `Pick the mark to join to ${E.selected.name}, or ${E.selected.name} again to cancel.` : 'Pick two marks to join or part them.',
         exit: E.selected ? `Where does ${E.selected.name} lead?` : 'Pick a mark to give it an exit.',
         area: E.selected && E.selected.prop ? `Drag ${E.selected.name}'s area.` : 'Pick a prop, then drag its area.',
+        grid: !E.model.grid ? 'This scene has no grid. Grid settings adds one.'
+          : E.paint === 'place' ? (E.selected ? `Pick a cell for ${E.selected.name}.` : 'Pick a mark, then a cell.')
+            : E.paint === 'erase' ? 'Drag over cells to clear them.' : `Drag over cells to make them ${E.paint}.`,
       }[E.tool];
-      const out = [tools, actions, view, line(fit(hint, n))];
+      const out = [tools, actions];
+      if (E.tool === 'grid') {
+        const row = document.createElement('div');
+        row.className = 'row';
+        if (E.model.grid) {
+          for (const id of [...ATTRIBUTES, 'erase', 'place']) {
+            const b = desk.button(E.win, `paint:${id}`, id.charAt(0).toUpperCase() + id.slice(1));
+            if (E.paint === id) b.classList.add('selected');
+            row.appendChild(b);
+          }
+          if (E.paint === 'place' && E.selected && onGrid(E.selected)) row.appendChild(desk.button(E.win, 'grid-unplace', `Unplace ${E.selected.name}`));
+        }
+        row.appendChild(desk.button(E.win, 'grid-settings', E.model.grid ? 'Grid settings...' : 'Add grid...'));
+        out.push(row);
+      }
+      out.push(view, line(fit(hint, n)));
       if (E.tool === 'exit' && E.selected && !E.selected.prop) {
         const list = document.createElement('div');
         list.className = 'list room-targets';
@@ -495,6 +757,9 @@ function createRooms(desk, screen, hooks) {
         if (msg.kind !== 'gadget') return;
         const id = msg.id;
         if (id.startsWith('tool:')) { E.tool = id.slice(5); E.selected = null; render(); return; }
+        if (id.startsWith('paint:')) { E.paint = id.slice(6); E.selected = null; render(); return; }
+        if (id === 'grid-settings') { await openGridForm(); return; }
+        if (id === 'grid-unplace') { await unplace(); return; }
         if (id === 'undo') { await stepUndo(E.undo, E.redo); return; }
         if (id === 'redo') { await stepUndo(E.redo, E.undo); return; }
         if (id === 'zoom-in') { E.zoom = ZOOMS.find((z) => z > E.zoom) || E.zoom; render(); return; }
@@ -502,7 +767,7 @@ function createRooms(desk, screen, hooks) {
         if (id === 'exit-none' || id.startsWith('exit-to:')) {
           const mark = E.selected && E.selected.name;
           if (!mark) return;
-          const model = structuredClone(E.model);
+          const model = cloneModel(E.model);
           model.exits = model.exits.filter((x) => x.mark !== mark);
           if (id !== 'exit-none') {
             const t = exitTargets()[Number(id.slice(8))];
@@ -514,6 +779,7 @@ function createRooms(desk, screen, hooks) {
     });
 
     function close() {
+      closeForm();
       if (E.win) E.win.close();
       E.win = null;
       editors.delete(E.name);
@@ -525,6 +791,8 @@ function createRooms(desk, screen, hooks) {
       selected: E.selected, block: E.scene.block, chained: E.model.chained,
       places: E.model.places.map((p) => ({ ...p, drawn: drawnOf(p) })),
       walkways: E.model.walkways, exits: E.model.exits, areas: E.model.areas,
+      grid: E.model.grid && { ...E.model.grid, cells: Object.fromEntries(ATTRIBUTES.map((a) => [a, [...E.model.grid.cells[a]].sort()])) },
+      paint: E.paint,
       listed: E.scene.places.map((p) => ({ name: p.name, prop: p.prop, drawn_x: p.drawn_x, drawn_y: p.drawn_y })),
     });
     // For tests: a press, drag, and release at art pixels, through the same handlers.

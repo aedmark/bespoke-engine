@@ -366,6 +366,8 @@ pub const GridPlaceDecl = struct {
     mark: []const u8,
     x: u32,
     y: u32,
+    /// The `place` line in the expanded text, for a refusal that names it (D-201).
+    line: u32 = 0,
 };
 
 /// `grid <Name> in <Room>:` owns one room's discrete overlay and its initial cell layout.
@@ -384,6 +386,10 @@ pub const GridDecl = struct {
     spread_ticks: u32 = 0,
     dissipate_ticks: u32 = 0,
     flow_ticks: u32 = 0,
+    /// The `grid` line and the block's last line, in the expanded text; the grid editor
+    /// rewrites lines `line` to `end_line` (D-201).
+    line: u32 = 0,
+    end_line: u32 = 0,
 };
 
 /// One agenda trigger line (P33-01, D-056): `requires` must hold, `unless` must not. `_` is a
@@ -1575,8 +1581,11 @@ pub const Parser = struct {
                 if (!contains(listed, place.name))
                     return self.error_at(place.at, "room '{s}' places {s} '{s}', which scene '{s}' does not list under '{s}:'", .{ room.scene, if (place.prop) "prop" else "mark", place.name, room.scene, if (place.prop) "props" else "marks" });
             }
-            for (scene.marks.items) |m| if (!placed(room.places, m, false))
-                return self.error_at(room.at, "room '{s}' does not place mark '{s}'; once a scene has a room block, every mark it lists needs a 'mark {s} at <x> <y>' line", .{ room.scene, m, m });
+            // A mark has one source of position (D-201): a grid's `place` line or the room block.
+            for (room.places) |place| if (!place.prop) if (grid_place(ast, room.scene, place.name)) |gp|
+                return self.error_at(place.at, "mark '{s}' is placed twice: here and by grid '{s}' ('place {s} {d} {d}'); give it one position", .{ place.name, gp.grid, place.name, gp.place.x, gp.place.y });
+            for (scene.marks.items) |m| if (!placed(room.places, m, false) and grid_place(ast, room.scene, m) == null)
+                return self.error_at(room.at, "room '{s}' does not place mark '{s}'; once a scene has a room block, every mark it lists needs a 'mark {s} at <x> <y>' line, or a grid's 'place' line", .{ room.scene, m, m });
             for (scene.props.items) |p| if (!placed(room.places, p, true))
                 return self.error_at(room.at, "room '{s}' does not place prop '{s}'; once a scene has a room block, every prop it lists needs a 'prop {s} at <x> <y>' line", .{ room.scene, p, p });
             for (room.walkways) |w| {
@@ -1598,6 +1607,15 @@ pub const Parser = struct {
             }
         }
         ast.rooms = self.room_srcs.items;
+    }
+
+    /// The grid `place` line that puts `mark` in `scene`'s grid, if one does.
+    fn grid_place(ast: *const AST, scene: []const u8, mark: []const u8) ?struct { grid: []const u8, place: GridPlaceDecl } {
+        for (ast.grids.items) |g| {
+            if (!std.mem.eql(u8, g.room, scene)) continue;
+            for (g.places) |pl| if (std.mem.eql(u8, pl.mark, mark)) return .{ .grid = g.name, .place = pl };
+        }
+        return null;
     }
 
     fn contains(list: []const []const u8, name: []const u8) bool {
@@ -2093,6 +2111,8 @@ pub const Parser = struct {
     /// trailing width and height, a rectangle. Bounds are checked here so a script error points
     /// at the grid rather than surfacing later as an engine validation failure.
     fn parse_grid_decl(self: *Parser) !GridDecl {
+        const grid_line: u32 = @intCast(self.current.line);
+        var end_line = grid_line;
         try self.advance(); // grid
         const name = (try self.expect(.identifier)).slice;
         _ = try self.expect(.kw_in);
@@ -2112,6 +2132,8 @@ pub const Parser = struct {
 
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             const directive = self.current.slice;
+            const directive_line: u32 = @intCast(self.current.line);
+            end_line = @max(end_line, directive_line);
             try self.advance();
             if (std.mem.eql(u8, directive, "size")) {
                 if (width != null) return self.set_error("grid '{s}' declares size twice", .{name});
@@ -2127,7 +2149,7 @@ pub const Parser = struct {
                 if (rates[r] != null) return self.set_error("grid '{s}' declares {s} twice", .{ name, directive });
                 rates[r] = try self.take_u32();
             } else if (std.mem.eql(u8, directive, "place")) {
-                try places.append(.{ .mark = try self.take_atom(), .x = try self.take_u32(), .y = try self.take_u32() });
+                try places.append(.{ .mark = try self.take_atom(), .x = try self.take_u32(), .y = try self.take_u32(), .line = directive_line });
             } else if (grid_mod.Attribute.from_name(directive) != null) {
                 var rect = GridRectDecl{ .attribute = directive, .x = try self.take_u32(), .y = try self.take_u32() };
                 if (self.current.tag == .number) {
@@ -2165,6 +2187,8 @@ pub const Parser = struct {
             .spread_ticks = rates[1] orelse 0,
             .dissipate_ticks = rates[2] orelse 0,
             .flow_ticks = rates[3] orelse 0,
+            .line = grid_line,
+            .end_line = end_line,
         };
     }
 

@@ -273,12 +273,15 @@ pub const RoomPlace = struct {
     drawn_x: u32,
     drawn_y: u32,
     placed: bool,
+    /// A grid's `place` line positions this mark (D-201); the room block leaves it out.
+    by_grid: bool = false,
 };
 
 pub const RoomArea = struct { prop: []const u8, x: u16, y: u16, w: u16, h: u16, in_block: bool };
 pub const RoomWalkway = struct { a: []const u8, b: []const u8 };
 pub const RoomExit = struct { mark: []const u8, to_scene: []const u8, to_mark: []const u8 };
 pub const RoomGridRect = struct { attribute: []const u8, x: u32, y: u32, width: u32, height: u32 };
+pub const RoomGridPlace = struct { mark: []const u8, x: u32, y: u32 };
 pub const RoomGrid = struct {
     name: []const u8,
     width: u32,
@@ -286,7 +289,14 @@ pub const RoomGrid = struct {
     cell: u32,
     origin_x: i32,
     origin_y: i32,
+    burn: u32,
+    spread: u32,
+    dissipate: u32,
+    flow: u32,
     rects: []const RoomGridRect,
+    places: []const RoomGridPlace,
+    /// Where the `grid` block is written, for the grid editor to rewrite it (D-201).
+    block: ScriptLines,
 };
 /// A range of lines in one script file: `script` as an include line wrote it (empty for the
 /// main script) and lines `line` to `end_line`, counted in that file.
@@ -333,12 +343,20 @@ pub fn room_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSo
                     item.y = p.y;
                     item.placed = true;
                 };
-                const world: spatial_mod.Point2D = if (item.placed) spatial_mod.art_to_world(item.x, item.y) else if (prop)
+                // A grid's `place` puts a mark at its cell's centre (D-054, D-201).
+                var by_grid: ?spatial_mod.Point2D = null;
+                if (!prop) for (ast.grids.items) |g| if (std.mem.eql(u8, g.room, sd.name)) for (g.places) |gp| if (std.mem.eql(u8, gp.mark, name)) {
+                    const half: i32 = @intCast(g.cell_size / 2);
+                    const size: i32 = @intCast(g.cell_size);
+                    by_grid = .{ .x = g.origin_x + @as(i32, @intCast(gp.x)) * size + half, .y = g.origin_y + @as(i32, @intCast(gp.y)) * size + half };
+                };
+                item.by_grid = by_grid != null;
+                const world: spatial_mod.Point2D = if (by_grid) |w| w else if (item.placed) spatial_mod.art_to_world(item.x, item.y) else if (prop)
                     .{ .x = 10 + codegen.stage_x(idx, names.len), .y = -6 }
                 else
                     .{ .x = codegen.stage_x(idx, names.len), .y = 0 };
                 const drawn = spatial_mod.world_to_art(world);
-                if (!item.placed) {
+                if (!item.placed or item.by_grid) {
                     item.x = drawn.x;
                     item.y = drawn.y;
                 }
@@ -363,7 +381,25 @@ pub fn room_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSo
         for (ast.grids.items) |g| if (std.mem.eql(u8, g.room, sd.name)) {
             const rects = try arena.alloc(RoomGridRect, g.rects.len);
             for (g.rects, rects) |src, *dst| dst.* = .{ .attribute = src.attribute, .x = src.x, .y = src.y, .width = src.width, .height = src.height };
-            try grids.append(arena, .{ .name = g.name, .width = g.width, .height = g.height, .cell = g.cell_size, .origin_x = g.origin_x, .origin_y = g.origin_y, .rects = rects });
+            const gplaces = try arena.alloc(RoomGridPlace, g.places.len);
+            for (g.places, gplaces) |src, *dst| dst.* = .{ .mark = src.mark, .x = src.x, .y = src.y };
+            const from = expanded.locate(g.line);
+            const to = expanded.locate(g.end_line);
+            try grids.append(arena, .{
+                .name = g.name,
+                .width = g.width,
+                .height = g.height,
+                .cell = g.cell_size,
+                .origin_x = g.origin_x,
+                .origin_y = g.origin_y,
+                .burn = g.burn_ticks,
+                .spread = g.spread_ticks,
+                .dissipate = g.dissipate_ticks,
+                .flow = g.flow_ticks,
+                .rects = rects,
+                .places = gplaces,
+                .block = .{ .script = from.file, .line = from.line, .end_line = to.line },
+            });
         };
         const declared_at = expanded.locate(sd.line);
         const declared_end = expanded.locate(sd.end_line);
