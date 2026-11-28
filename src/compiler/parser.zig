@@ -147,6 +147,8 @@ pub const CueHandler = struct {
     params: []const []const u8,
     where_patterns: []const FactPattern,
     body: []const Stmt,
+    /// The handler's first line, in the expanded text (P47-05, D-202).
+    line: u32 = 0,
 };
 
 pub const WhenEdge = enum {
@@ -508,6 +510,9 @@ pub const AxisDecl = struct {
     poles: [2][]const u8,
     /// `drift step N` indented under the axis (P48-13, D-183); null keeps the default.
     drift_step: ?u8 = null,
+    /// The `axis` line and the last line under it, in the expanded text (P47-05, D-202).
+    line: u32 = 0,
+    end_line: u32 = 0,
 };
 
 /// One `leans <N> toward <Axis> when|unless <Fact>` line of a dilemma (P45-03).
@@ -639,7 +644,16 @@ pub const LookBinding = struct { name: []const u8, image: u16, animations: [imag
 /// `part <Part> of <Host> at <dx> <dy>` (P48-11, D-181).
 pub const PartBinding = struct { part: []const u8, host: []const u8, dx: i16, dy: i16, at: Token };
 
-pub const NameDecl = struct { entity: []const u8, text: []const u8 };
+pub const NameDecl = struct {
+    entity: []const u8,
+    text: []const u8,
+    /// The `name` line, in the expanded text (P47-05, D-202).
+    line: u32 = 0,
+};
+
+/// A top-level `remember` statement's relation, arguments, and line, for a tool that edits a
+/// starting value in place (P47-05, D-202).
+pub const InitialFactLine = struct { relation: []const u8, args: []const []const u8, line: u32 };
 pub const PhraseDecl = struct { key: []const u8, text: []const u8 };
 
 pub const AST = struct {
@@ -803,6 +817,8 @@ pub const Parser = struct {
     part_srcs: std.ArrayListUnmanaged(PartBinding) = .empty,
     cycle_srcs: std.ArrayListUnmanaged(CycleSource) = .empty,
     room_srcs: std.ArrayListUnmanaged(RoomDecl) = .empty,
+    /// Top-level `remember` lines in source order (P47-05, D-202).
+    initial_fact_lines: std.ArrayListUnmanaged(InitialFactLine) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -951,8 +967,10 @@ pub const Parser = struct {
                     try ast.relations.append(.{ .name = name, .is_property = is_prop });
                 },
                 .kw_remember => {
+                    const remember_line: u32 = @intCast(self.current.line);
                     const stmt = try self.parse_remember_stmt();
                     try ast.initial_stmts.append(stmt);
+                    if (stmt == .remember) try self.initial_fact_lines.append(self.allocator, .{ .relation = stmt.remember.relation, .args = stmt.remember.args, .line = remember_line });
                 },
                 .kw_transition => {
                     try self.advance(); // consume 'transition'
@@ -1104,6 +1122,7 @@ pub const Parser = struct {
                 },
                 .kw_routine => try ast.routines.append(try self.parse_routine_decl()),
                 .kw_on => {
+                    const handler_line: u32 = @intCast(self.current.line);
                     try self.advance(); // consume 'on'
                     _ = try self.expect(.kw_cue);
                     const cue_name = (try self.expect(.identifier)).slice;
@@ -1141,9 +1160,11 @@ pub const Parser = struct {
                         .params = try params.toOwnedSlice(),
                         .where_patterns = try where_patterns.toOwnedSlice(),
                         .body = body,
+                        .line = handler_line,
                     });
                 },
                 .kw_verb => {
+                    const verb_line: u32 = @intCast(self.current.line);
                     try self.advance(); // consume 'verb' (P7-02, D-009)
                     const verb_name = (try self.expect(.identifier)).slice;
                     _ = try self.expect(.lparen);
@@ -1180,6 +1201,7 @@ pub const Parser = struct {
                         .params = try params.toOwnedSlice(),
                         .where_patterns = try where_patterns.toOwnedSlice(),
                         .body = body,
+                        .line = verb_line,
                     });
                 },
                 .kw_when => {
@@ -1396,7 +1418,7 @@ pub const Parser = struct {
                         for (ast.display_names.items) |prior| {
                             if (std.mem.eql(u8, prior.entity, entity)) return self.error_at(thing, "'{s}' is named twice", .{entity});
                         }
-                        try ast.display_names.append(self.allocator, .{ .entity = entity, .text = text });
+                        try ast.display_names.append(self.allocator, .{ .entity = entity, .text = text, .line = @intCast(start.line) });
                         continue;
                     }
                     if (std.mem.eql(u8, start.slice, "phrase") and self.current.line == start.line and self.current.tag == .identifier) {
@@ -3361,6 +3383,8 @@ pub const Parser = struct {
     /// Parses `axis <Virtue> between <Pole> and <Pole>` (P45-01). A pole may be quoted or run
     /// to the end of its phrase, so `Condoning Harm` needs no quotes.
     fn parse_axis_decl(self: *Parser) !AxisDecl {
+        const axis_line: u32 = @intCast(self.current.line);
+        var end_line = axis_line;
         try self.advance(); // axis
         const name = (try self.expect(.identifier)).slice;
         const between = try self.expect(.identifier);
@@ -3382,6 +3406,7 @@ pub const Parser = struct {
             try self.advance();
             while (self.current.tag != .dedent and self.current.tag != .eof) {
                 const line = self.current;
+                end_line = @max(end_line, @as(u32, @intCast(line.line)));
                 if (!(line.tag == .identifier and std.mem.eql(u8, line.slice, "drift"))) return self.error_at(line, "axis '{s}' takes only 'drift step <N>' below it", .{name});
                 try self.advance();
                 if (!(self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "step"))) return self.error_at(self.current, "axis '{s}' expects 'drift step <N>'", .{name});
@@ -3394,7 +3419,7 @@ pub const Parser = struct {
             }
             _ = try self.expect(.dedent);
         }
-        return .{ .name = name, .poles = .{ first, second }, .drift_step = drift_step };
+        return .{ .name = name, .poles = .{ first, second }, .drift_step = drift_step, .line = axis_line, .end_line = end_line };
     }
 
     fn decision_clause(self: *Parser, owner_kind: []const u8, owner: []const u8) !FactPattern {

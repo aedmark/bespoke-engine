@@ -423,6 +423,81 @@ pub fn room_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSo
     return out;
 }
 
+/// A scene as the cast editor sees it (P47-05, D-202): its lists, where it is declared, and
+/// whether it has a room block, which a new mark or prop must then be placed in.
+pub const CastScene = struct {
+    name: []const u8,
+    declared: ScriptLines,
+    cast: []const []const u8,
+    props: []const []const u8,
+    marks: []const []const u8,
+    room_block: ?ScriptLines,
+};
+pub const CastName = struct { entity: []const u8, text: []const u8, at: ScriptLines };
+pub const CastAxis = struct { name: []const u8, low: []const u8, high: []const u8, at: ScriptLines };
+/// A top-level `remember <Axis>(<Character>, N)`: a starting value.
+pub const CastValue = struct { axis: []const u8, character: []const u8, value: i32, at: ScriptLines };
+/// A routine (`name` its routine name, `actor` its entity) or a cue handler (`name` its cue,
+/// `actor` its first parameter).
+pub const CastCode = struct { handler: bool, name: []const u8, actor: []const u8, at: ScriptLines };
+pub const CastSources = struct {
+    scenes: []const CastScene,
+    names: []const CastName,
+    axes: []const CastAxis,
+    values: []const CastValue,
+    code: []const CastCode,
+};
+
+/// Parses `source` far enough to list what the cast editor edits (P47-05, D-202), as
+/// `room_sources` does: everything lives in `arena`, and a script that does not parse returns
+/// the parse error. Each line is given in the file that holds it.
+pub fn cast_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) !CastSources {
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    const lines = struct {
+        fn of(e: includes.Expanded, from: u32, to: u32) ScriptLines {
+            const a = e.locate(from);
+            const b = e.locate(to);
+            return .{ .script = a.file, .line = a.line, .end_line = b.line };
+        }
+    }.of;
+    const scenes = try arena.alloc(CastScene, ast.scene_defs.items.len);
+    for (ast.scene_defs.items, scenes) |sd, *out| {
+        const room: ?parser.RoomDecl = for (ast.rooms) |r| {
+            if (std.mem.eql(u8, r.scene, sd.name)) break r;
+        } else null;
+        out.* = .{
+            .name = sd.name,
+            .declared = lines(expanded, sd.line, sd.end_line),
+            .cast = sd.cast.items,
+            .props = sd.props.items,
+            .marks = sd.marks.items,
+            .room_block = if (room) |r| lines(expanded, @intCast(r.at.line), r.end_line) else null,
+        };
+    }
+    const names = try arena.alloc(CastName, ast.display_names.items.len);
+    for (ast.display_names.items, names) |n, *out| out.* = .{ .entity = n.entity, .text = n.text, .at = lines(expanded, n.line, n.line) };
+    const axes = try arena.alloc(CastAxis, ast.axes.items.len);
+    for (ast.axes.items, axes) |a, *out| out.* = .{ .name = a.name, .low = a.poles[0], .high = a.poles[1], .at = lines(expanded, a.line, a.end_line) };
+    var values: std.ArrayList(CastValue) = .empty;
+    for (parse.initial_fact_lines.items) |f| {
+        if (f.args.len != 2) continue;
+        for (ast.axes.items) |a| if (std.mem.eql(u8, a.name, f.relation)) {
+            const v = std.fmt.parseInt(i32, f.args[1], 10) catch break;
+            try values.append(arena, .{ .axis = a.name, .character = f.args[0], .value = v, .at = lines(expanded, f.line, f.line) });
+            break;
+        };
+    }
+    var code: std.ArrayList(CastCode) = .empty;
+    for (ast.routines.items) |r| try code.append(arena, .{ .handler = false, .name = r.name, .actor = r.entity, .at = lines(expanded, r.line, r.line) });
+    for (ast.cue_handlers.items) |h| try code.append(arena, .{ .handler = true, .name = h.cue_name, .actor = if (h.params.len > 0) h.params[0] else "", .at = lines(expanded, h.line, h.line) });
+    return .{ .scenes = scenes, .names = names, .axes = axes, .values = values.items, .code = code.items };
+}
+
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
     return check_source_with(allocator, source, null);
 }
@@ -1849,6 +1924,47 @@ test "D-199: room block refusals name the line and the missing thing" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "D-202: cast_sources lists scenes, display names, axes, starting values, and code with their lines" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Court:
+        \\  cast: Valerius, Ines
+        \\  marks: Bench
+        \\
+        \\name Valerius: "Judge Valerius"
+        \\
+        \\axis Mercy between Vengeance and "Condoning Harm"
+        \\  drift step 4
+        \\
+        \\remember Mercy(Valerius, -3)
+        \\
+        \\routine Sit(Valerius):
+        \\  wait 1 ticks
+        \\
+        \\on cue TalksTo(Ines, Valerius):
+        \\  say Valerius: "Speak."
+        \\
+    ;
+    const c = try cast_sources(arena.allocator(), src, null);
+    try testing.expectEqual(@as(usize, 1), c.scenes.len);
+    try testing.expectEqual(@as(u32, 3), c.scenes[0].declared.end_line);
+    try testing.expectEqual(@as(usize, 2), c.scenes[0].cast.len);
+    try testing.expectEqualStrings("Judge Valerius", c.names[0].text);
+    try testing.expectEqual(@as(u32, 5), c.names[0].at.line);
+    try testing.expectEqualStrings("Condoning Harm", c.axes[0].high);
+    try testing.expectEqual(@as(u32, 7), c.axes[0].at.line);
+    try testing.expectEqual(@as(u32, 8), c.axes[0].at.end_line);
+    try testing.expectEqual(@as(i32, -3), c.values[0].value);
+    try testing.expectEqual(@as(u32, 10), c.values[0].at.line);
+    try testing.expectEqual(@as(usize, 2), c.code.len);
+    try testing.expectEqual(@as(u32, 12), c.code[0].at.line);
+    try testing.expect(c.code[1].handler);
+    try testing.expectEqualStrings("Ines", c.code[1].actor);
+    try testing.expectEqual(@as(u32, 15), c.code[1].at.line);
 }
 
 test "D-200: room_sources lists each scene's lines, places, and room block across files" {

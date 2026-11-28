@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio edits the cast (`P47-05`, `D-202`): the Cast window lists each scene's cast, props, and marks with display names, each character's routines and cue handlers (opening the script at the line), and the value axes with starting values. It adds a name to a scene (with its room-block line when the scene has one), sets display names, declares axes, and sets starting values, each as one line checked before it is kept. `compiler.cast_sources` lists these for tools.
+
 - The room editor paints grids (`P47-12`, `D-201`): the Grid tool paints flammable, liquid, blocking, burning, and smoke cells, places marks on cells, and a settings form sets size, cell, origin, and fire, smoke, and water rates. The grid block is written beside the room block with merged rectangles and checked before it is kept. A mark placed by both a room block and a grid `place` is now a compile error, and a grid origin may be negative, as the code always allowed.
 
 - The Studio lays out rooms (`P47-03`, `D-200`): the Rooms window lists a script's scenes, and a Room window shows one over its backdrop and grid, where you drag marks and props, join marks with walkways, set exits to another scene's mark, and draw a prop's area. Each change is written as that scene's room block (in place, or after its `scene` block) and checked before it is kept; Undo restores the script exactly. `compiler.room_sources` lists a script's scenes and room blocks for tools.

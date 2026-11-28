@@ -578,7 +578,58 @@ pub const Project = struct {
         return lines;
     }
 
-    const Edit = struct { path: []const u8, from: u32, to: u32, insert: bool, order: u8, lines: []const []const u8 };
+    /// One splice: replace lines `from` to `to`, or insert after line `from` (a blank line
+    /// first when `blank`), in the script at table path `path`.
+    const Edit = struct { path: []const u8, from: u32, to: u32 = 0, insert: bool, blank: bool = true, order: u8 = 0, lines: []const []const u8 };
+
+    /// Applies `edits` and checks the project once (D-197 item 4): later lines first, so earlier
+    /// line numbers still hold, and at one line in `order`. When the project does not check,
+    /// every touched script is put back and the check's JSON is left in `result`; otherwise
+    /// `result` names the scripts written.
+    fn apply_edits(self: *Project, a: Allocator, main_path: []const u8, edits: []Edit) !bool {
+        std.mem.sort(Edit, edits, {}, struct {
+            fn before(_: void, x: Edit, y: Edit) bool {
+                const c = std.mem.order(u8, x.path, y.path);
+                if (c != .eq) return c == .lt;
+                if (x.from != y.from) return x.from > y.from;
+                return x.order < y.order;
+            }
+        }.before);
+        var saved: std.ArrayList(struct { path: []const u8, bytes: []u8 }) = .empty;
+        defer for (saved.items) |sv| self.allocator.free(sv.bytes);
+        for (edits) |e| {
+            const now = self.find(e.path) orelse {
+                for (saved.items) |sv| try self.add(sv.path, sv.bytes);
+                return self.refuse_room("the script is not in the project");
+            };
+            const seen = for (saved.items) |sv| {
+                if (std.mem.eql(u8, sv.path, e.path)) break true;
+            } else false;
+            if (!seen) try saved.append(a, .{ .path = e.path, .bytes = try self.allocator.dupe(u8, now) });
+            const spliced = if (!e.insert)
+                try replace_lines(a, now, e.from, e.to, e.lines)
+            else if (e.blank)
+                try insert_block(a, now, e.from, e.lines)
+            else
+                try insert_lines(a, now, e.from, e.lines);
+            try self.add(e.path, spliced.bytes);
+        }
+        if (!try self.check(main_path)) {
+            for (saved.items) |sv| try self.add(sv.path, sv.bytes);
+            return false;
+        }
+        self.result.clearRetainingCapacity();
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        try w.raw("{\"written\":true,\"scripts\":[");
+        for (saved.items, 0..) |sv, i| {
+            if (i > 0) try w.raw(",");
+            try w.string(sv.path);
+        }
+        try w.raw("],\"script\":");
+        try w.string(saved.items[0].path);
+        try w.raw("}");
+        return true;
+    }
 
     /// Writes one scene's room block, grid block, or both from `request` (`RoomEdit`), P47-03,
     /// P47-12, D-200, D-201: each block is rewritten whole where it stands, or a first one goes
@@ -641,42 +692,221 @@ pub const Project = struct {
             }
         }
         if (edits.items.len == 0) return self.refuse_room("the edit changes nothing");
-        // Later lines first, so earlier line numbers still hold; at one line, the grid first.
-        std.mem.sort(Edit, edits.items, {}, struct {
-            fn before(_: void, x: Edit, y: Edit) bool {
-                const c = std.mem.order(u8, x.path, y.path);
-                if (c != .eq) return c == .lt;
-                if (x.from != y.from) return x.from > y.from;
-                return x.order < y.order;
-            }
-        }.before);
+        return self.apply_edits(a, main_path, edits.items);
+    }
 
-        var saved: std.ArrayList(struct { path: []const u8, bytes: []u8 }) = .empty;
-        defer for (saved.items) |s| self.allocator.free(s.bytes);
-        for (edits.items) |e| {
-            const now = self.find(e.path) orelse return self.refuse_room("the scene's script is not in the project");
-            const seen = for (saved.items) |s| {
-                if (std.mem.eql(u8, s.path, e.path)) break true;
-            } else false;
-            if (!seen) try saved.append(a, .{ .path = e.path, .bytes = try self.allocator.dupe(u8, now) });
-            const spliced = if (e.insert) try insert_block(a, now, e.from, e.lines) else try replace_lines(a, now, e.from, e.to, e.lines);
-            try self.add(e.path, spliced.bytes);
-        }
-        if (!try self.check(main_path)) {
-            for (saved.items) |s| try self.add(s.path, s.bytes);
-            return false;
-        }
+    /// Lists what the cast editor edits (P47-05, D-202) as JSON in `result`: scenes with their
+    /// lists, display names, axes, starting values, and each routine and cue handler, every one
+    /// with its script and line. A script that does not parse gets the check's JSON and false.
+    pub fn cast(self: *Project, main_path: []const u8) !bool {
         self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse {
+            try self.write_missing(main_path);
+            return false;
+        };
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const c = compiler.cast_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
         var w = Json{ .list = &self.result, .allocator = self.allocator };
-        try w.raw("{\"written\":true,\"scripts\":[");
-        for (saved.items, 0..) |s, i| {
+        var buf: [1024]u8 = undefined;
+        const at = struct {
+            fn write(p: *Project, jw: *Json, b: []u8, m: []const u8, d: []const u8, l: compiler.ScriptLines) !void {
+                try p.json_lines(jw, b, m, d, l);
+                try jw.raw("}");
+            }
+        }.write;
+        const list = struct {
+            fn write(jw: *Json, names: []const []const u8) !void {
+                try jw.raw("[");
+                for (names, 0..) |n, i| {
+                    if (i > 0) try jw.raw(",");
+                    try jw.string(n);
+                }
+                try jw.raw("]");
+            }
+        }.write;
+        try w.raw("{\"valid\":true,\"scenes\":[");
+        for (c.scenes, 0..) |sc, i| {
             if (i > 0) try w.raw(",");
-            try w.string(s.path);
+            try w.raw("{\"name\":");
+            try w.string(sc.name);
+            try w.raw(",\"declared\":");
+            try at(self, &w, &buf, main_path, dir, sc.declared);
+            try w.raw(",\"cast\":");
+            try list(&w, sc.cast);
+            try w.raw(",\"props\":");
+            try list(&w, sc.props);
+            try w.raw(",\"marks\":");
+            try list(&w, sc.marks);
+            try w.raw(if (sc.room_block != null) ",\"room_block\":true}" else ",\"room_block\":false}");
         }
-        try w.raw("],\"script\":");
-        try w.string(saved.items[0].path);
-        try w.raw("}");
+        try w.raw("],\"names\":[");
+        for (c.names, 0..) |n, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"entity\":");
+            try w.string(n.entity);
+            try w.raw(",\"text\":");
+            try w.string(n.text);
+            try w.raw(",\"at\":");
+            try at(self, &w, &buf, main_path, dir, n.at);
+            try w.raw("}");
+        }
+        try w.raw("],\"axes\":[");
+        for (c.axes, 0..) |ax, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"name\":");
+            try w.string(ax.name);
+            try w.raw(",\"low\":");
+            try w.string(ax.low);
+            try w.raw(",\"high\":");
+            try w.string(ax.high);
+            try w.raw(",\"at\":");
+            try at(self, &w, &buf, main_path, dir, ax.at);
+            try w.raw("}");
+        }
+        try w.raw("],\"values\":[");
+        for (c.values, 0..) |v, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"axis\":");
+            try w.string(v.axis);
+            try w.raw(",\"character\":");
+            try w.string(v.character);
+            try w.raw(",\"value\":");
+            try w.number(v.value);
+            try w.raw(",\"at\":");
+            try at(self, &w, &buf, main_path, dir, v.at);
+            try w.raw("}");
+        }
+        try w.raw("],\"code\":[");
+        for (c.code, 0..) |k, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw(if (k.handler) "{\"handler\":true,\"name\":" else "{\"handler\":false,\"name\":");
+            try w.string(k.name);
+            try w.raw(",\"actor\":");
+            try w.string(k.actor);
+            try w.raw(",\"at\":");
+            try at(self, &w, &buf, main_path, dir, k.at);
+            try w.raw("}");
+        }
+        try w.raw("]}");
         return true;
+    }
+
+    /// Writes one cast edit (P47-05, D-202), a single tab-separated record:
+    /// `add<TAB>Scene<TAB>cast|props|marks<TAB>Name` adds a list line at the end of the scene's
+    /// block (and the name's room-block line at its default spot when the scene has one),
+    /// `name<TAB>Thing<TAB>Text` sets a display name (an empty text removes the line),
+    /// `axis<TAB>Virtue<TAB>Low<TAB>High` declares an axis or changes its poles, and
+    /// `value<TAB>Axis<TAB>Character<TAB>N` sets a starting value. Each changes or adds one line
+    /// of a script (two for a placed name), and is checked before it is kept.
+    pub fn write_cast(self: *Project, main_path: []const u8, record: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        var f: [5][]const u8 = undefined;
+        var n: usize = 0;
+        var fields = std.mem.splitScalar(u8, std.mem.trimEnd(u8, record, "\n"), '\t');
+        while (fields.next()) |field| {
+            if (n == f.len) return self.refuse_room("the cast edit is not one the Studio understands");
+            f[n] = field;
+            n += 1;
+        }
+        const source = self.find(main_path) orelse return self.refuse_room("the project has no main script");
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const c = compiler.cast_sources(a, source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var buf: [1024]u8 = undefined;
+        const path_of = struct {
+            fn of(al: Allocator, b: []u8, m: []const u8, d: []const u8, script: []const u8) ![]const u8 {
+                return al.dupe(u8, table_script(b, m, d, script));
+            }
+        }.of;
+        var edits: std.ArrayList(Edit) = .empty;
+        const kind = if (n > 0) f[0] else "";
+        if (std.mem.eql(u8, kind, "add") and n == 4) {
+            const sc = for (c.scenes) |x| {
+                if (std.mem.eql(u8, x.name, f[1])) break x;
+            } else return self.refuse_room("the script declares no such scene with 'scene <Name>:'");
+            const list = f[2];
+            if (!(std.mem.eql(u8, list, "cast") or std.mem.eql(u8, list, "props") or std.mem.eql(u8, list, "marks")))
+                return self.refuse_room("a name goes in a scene's cast, props, or marks");
+            const name = std.mem.trim(u8, f[3], " ");
+            if (name.len == 0) return self.refuse_room("the name is empty");
+            const line = try a.dupe(u8, try std.fmt.allocPrint(a, "  {s}: {s}", .{ list, try room_name(a, name) }));
+            try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, sc.declared.script), .from = sc.declared.end_line, .insert = true, .blank = false, .lines = try a.dupe([]const u8, &.{line}) });
+            // A scene with a room block places everything it lists (D-199 item 4), so a new
+            // mark or prop gets its line there, at the spot it would have had without one.
+            if (sc.room_block) |rb| if (!std.mem.eql(u8, list, "cast")) {
+                const prop = std.mem.eql(u8, list, "props");
+                const count = (if (prop) sc.props.len else sc.marks.len) + 1;
+                const idx = count - 1;
+                const world: bespoke.spatial.Point2D = if (prop)
+                    .{ .x = 10 + compiler.codegen.stage_x(idx, count), .y = -6 }
+                else
+                    .{ .x = compiler.codegen.stage_x(idx, count), .y = 0 };
+                const spot = bespoke.spatial.world_to_art(world);
+                const room_line = try std.fmt.allocPrint(a, "  {s} {s} at {d} {d}", .{ if (prop) "prop" else "mark", try room_name(a, name), spot.x, spot.y });
+                try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, rb.script), .from = rb.end_line, .insert = true, .blank = false, .order = 1, .lines = try a.dupe([]const u8, &.{room_line}) });
+            };
+        } else if (std.mem.eql(u8, kind, "name") and n == 3) {
+            const thing = f[1];
+            const text = f[2];
+            if (std.mem.indexOfScalar(u8, text, '"') != null) return self.refuse_room("a display name cannot hold a double quote");
+            const existing = for (c.names) |x| {
+                if (std.mem.eql(u8, x.entity, thing)) break x;
+            } else null;
+            const line = try std.fmt.allocPrint(a, "name {s}: \"{s}\"", .{ try room_name(a, thing), text });
+            if (existing) |x| {
+                const path = try path_of(a, &buf, main_path, dir, x.at.script);
+                const lines: []const []const u8 = if (text.len == 0) &.{} else try a.dupe([]const u8, &.{line});
+                try edits.append(a, .{ .path = path, .from = x.at.line, .to = x.at.line, .insert = false, .lines = lines });
+            } else {
+                if (text.len == 0) return self.refuse_room("the thing has no display name to remove");
+                // After the block of the first scene that lists it, else at the main script's end.
+                const sc = for (c.scenes) |x| {
+                    if (listed(x, thing)) break x;
+                } else null;
+                if (sc) |x| {
+                    try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, x.declared.script), .from = x.declared.end_line, .insert = true, .blank = false, .lines = try a.dupe([]const u8, &.{line}) });
+                } else try edits.append(a, .{ .path = main_path, .from = line_count(source), .insert = true, .blank = false, .lines = try a.dupe([]const u8, &.{line}) });
+            }
+        } else if (std.mem.eql(u8, kind, "axis") and n == 4) {
+            if (!is_image_word(f[1])) return self.refuse_room("an axis is one word: a letter, then letters, digits, or underscores");
+            const line = try std.fmt.allocPrint(a, "axis {s} between {s} and {s}", .{ f[1], try pole_name(a, f[2]), try pole_name(a, f[3]) });
+            const existing = for (c.axes) |x| {
+                if (std.mem.eql(u8, x.name, f[1])) break x;
+            } else null;
+            if (existing) |x| {
+                // Only the `axis` line: its `drift step` lines below stay as written.
+                try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, x.at.script), .from = x.at.line, .to = x.at.line, .insert = false, .lines = try a.dupe([]const u8, &.{line}) });
+            } else if (c.axes.len > 0) {
+                const last = c.axes[c.axes.len - 1];
+                try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, last.at.script), .from = last.at.end_line, .insert = true, .blank = false, .lines = try a.dupe([]const u8, &.{line}) });
+            } else try edits.append(a, .{ .path = main_path, .from = line_count(source), .insert = true, .lines = try a.dupe([]const u8, &.{line}) });
+        } else if (std.mem.eql(u8, kind, "value") and n == 4) {
+            const v = std.fmt.parseInt(i32, f[3], 10) catch return self.refuse_room("a value is a whole number from -10 to 10");
+            if (v < -10 or v > 10) return self.refuse_room("a value is a whole number from -10 to 10");
+            const ax = for (c.axes) |x| {
+                if (std.mem.eql(u8, x.name, f[1])) break x;
+            } else return self.refuse_room("the script declares no such axis");
+            const line = try std.fmt.allocPrint(a, "remember {s}({s}, {d})", .{ ax.name, try atom_name(a, f[2]), v });
+            const existing = for (c.values) |x| {
+                if (std.mem.eql(u8, x.axis, ax.name) and std.mem.eql(u8, x.character, f[2])) break x;
+            } else null;
+            if (existing) |x| {
+                try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, x.at.script), .from = x.at.line, .to = x.at.line, .insert = false, .lines = try a.dupe([]const u8, &.{line}) });
+            } else try edits.append(a, .{ .path = try path_of(a, &buf, main_path, dir, ax.at.script), .from = ax.at.end_line, .insert = true, .blank = false, .lines = try a.dupe([]const u8, &.{line}) });
+        } else return self.refuse_room("the cast edit is not one the Studio understands");
+        return self.apply_edits(a, main_path, edits.items);
     }
 
     pub fn refuse_room(self: *Project, why: []const u8) !bool {
@@ -837,6 +1067,47 @@ fn merge_rects(width: u32, height: u32, set: []const bool, used: []bool, a: Allo
         try out.append(a, .{ .x = @intCast(xx), .y = @intCast(yy), .w = @intCast(w), .h = @intCast(h) });
     };
     return out.items;
+}
+
+fn listed(sc: compiler.CastScene, thing: []const u8) bool {
+    for ([_][]const []const u8{ sc.cast, sc.props, sc.marks }) |names| {
+        for (names) |name| if (std.mem.eql(u8, name, thing)) return true;
+    }
+    return false;
+}
+
+fn line_count(text: []const u8) u32 {
+    if (text.len == 0) return 0;
+    const n: u32 = @intCast(std.mem.count(u8, text, "\n"));
+    return if (text[text.len - 1] == '\n') n else n + 1;
+}
+
+/// A pole as an `axis` line takes it: bare when it is one word the lexer reads back, quoted
+/// otherwise, so a pole of several words never runs into `and`.
+fn pole_name(a: Allocator, name: []const u8) ![]const u8 {
+    if (std.mem.indexOfScalar(u8, name, '"') != null) return error.UnwritableName;
+    if (std.mem.indexOfScalar(u8, name, ' ') == null) {
+        const bare = try room_name(a, name);
+        if (bare.ptr == name.ptr) return name;
+    }
+    return std.fmt.allocPrint(a, "\"{s}\"", .{name});
+}
+
+/// `text` with `lines` inserted after line `after`, with no blank line, in the file's own line
+/// ending; a file that ends without a newline still does (D-202 item 5).
+fn insert_lines(a: Allocator, text: []const u8, after: u32, lines: []const []const u8) !Spliced {
+    const eol = line_ending(text);
+    const at = line_start(text, after + 1);
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, text[0..at]);
+    const open_end = at == text.len and text.len > 0 and text[text.len - 1] != '\n';
+    if (open_end) try out.appendSlice(a, eol);
+    for (lines, 0..) |l, i| {
+        try out.appendSlice(a, l);
+        if (!open_end or i + 1 < lines.len) try out.appendSlice(a, eol);
+    }
+    try out.appendSlice(a, text[at..]);
+    return .{ .bytes = out.items, .line = after + 1 };
 }
 
 /// The file's line ending: CRLF when its first line ends so, else LF (D-197 item 1).
@@ -1336,8 +1607,8 @@ test "the grid editor writes merged rectangles and places, beside the room block
     try std.testing.expect(try p.rooms("main.bespoke"));
     try std.testing.expect(result_has(&p, "\"by_grid\":true"));
     try std.testing.expect(result_has(&p, "\"places\":[{\"mark\":\"Well\",\"x\":2,\"y\":1}]"));
-    const listed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
-    listed.deinit();
+    const grid_json = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    grid_json.deinit();
 
     // Rewritten in place; a mark in both the room block and the grid is refused, and put back.
     const now = try std.testing.allocator.dupe(u8, p.find("main.bespoke").?);
@@ -1353,4 +1624,31 @@ test "a first room and grid block in one edit land in order after the scene" {
     try p.add("main.bespoke", "scene Yard:\n  marks: Gate\n");
     try std.testing.expect(try p.write_room("main.bespoke", "scene\tYard\nroom\nmark\tGate\t40\t120\ngrid\tFloor\nsize\t2\t2\ncell\t10\n"));
     try std.testing.expectEqualStrings("scene Yard:\n  marks: Gate\n\nroom Yard:\n  mark Gate at 40 120\n\ngrid Floor in Yard:\n  size 2 2\n  cell 10\n", p.find("main.bespoke").?);
+}
+
+test "the cast editor adds a name, sets a display name, an axis, and a starting value as single lines" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    const before = "scene Court:\r\n  cast: Valerius\r\n  marks: Bench\r\n\r\nroom Court:\r\n  mark Bench at 100 120\r\n\r\naxis Mercy between Vengeance and \"Condoning Harm\"\r\n  drift step 4\r\nremember Mercy(Valerius, -3)\r\n\r\nroutine Sit(Valerius):\r\n  wait 1 ticks\r\n";
+    try p.add("main.bespoke", before);
+    try std.testing.expect(try p.cast("main.bespoke"));
+    const cast_json = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    cast_json.deinit();
+    try std.testing.expect(result_has(&p, "\"room_block\":true"));
+
+    // A mark in a scene with a room block: the list line and its room line, in one edit.
+    try std.testing.expect(try p.write_cast("main.bespoke", "add\tCourt\tmarks\tDock"));
+    try std.testing.expect(try p.write_cast("main.bespoke", "value\tMercy\tValerius\t5"));
+    try std.testing.expect(try p.write_cast("main.bespoke", "name\tValerius\tJudge Valerius"));
+    try std.testing.expect(try p.write_cast("main.bespoke", "axis\tJustice\tCruelty\tLeniency"));
+    try std.testing.expect(try p.write_cast("main.bespoke", "value\tJustice\tValerius\t8"));
+    try std.testing.expectEqualStrings("scene Court:\r\n  cast: Valerius\r\n  marks: Bench\r\n  marks: Dock\r\nname Valerius: \"Judge Valerius\"\r\n\r\nroom Court:\r\n  mark Bench at 100 120\r\n  mark Dock at 159 94\r\n\r\naxis Mercy between Vengeance and \"Condoning Harm\"\r\n  drift step 4\r\naxis Justice between Cruelty and Leniency\r\nremember Justice(Valerius, 8)\r\nremember Mercy(Valerius, 5)\r\n\r\nroutine Sit(Valerius):\r\n  wait 1 ticks\r\n", p.find("main.bespoke").?);
+
+    // Refusals leave the script alone.
+    const now = try std.testing.allocator.dupe(u8, p.find("main.bespoke").?);
+    defer std.testing.allocator.free(now);
+    try std.testing.expect(!try p.write_cast("main.bespoke", "value\tMercy\tValerius\t11"));
+    try std.testing.expect(!try p.write_cast("main.bespoke", "value\tPride\tValerius\t1"));
+    try std.testing.expect(!try p.write_cast("main.bespoke", "add\tCourt\tmarks\tBench"));
+    try std.testing.expectEqualStrings(now, p.find("main.bespoke").?);
 }

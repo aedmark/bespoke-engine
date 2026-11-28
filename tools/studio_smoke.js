@@ -29,7 +29,10 @@
 //      command line walks through the new exit;
 //  10. (P47-12, D-201) the Grid tool adds a grid through its settings form, paints cells,
 //      places a mark on a cell (leaving the room block in the same edit), and Save writes the
-//      grid block beside the room block; the command line holds the painted cells as facts.
+//      grid block beside the room block; the command line holds the painted cells as facts;
+//  11. (P47-05, D-202) the Cast window adds a mark (with its room-block line), sets a display
+//      name, declares an axis, and sets a starting value, each one checked line; Save writes
+//      exactly those lines, and the command line holds the new value as a fact.
 'use strict';
 
 const fs = require('fs');
@@ -199,9 +202,11 @@ async function run(pageUrl) {
     const state = () => evaluate('window.bespokeStudio && window.bespokeStudio.state()');
     const load = async (label) => {
       await cdp.send('Page.navigate', { url: pageUrl });
+      // The state is read after the compiler settles: read before, it could still say loading.
       return waitFor(`${label}: Studio ready`, async () => {
         const s = await state();
-        return s && s.ready && (await evaluate('window.bespokeStudio.compilerReady()')) ? s : null;
+        if (!s || !s.ready || !(await evaluate('window.bespokeStudio.compilerReady()'))) return null;
+        return state();
       });
     };
     const centre = (selector) => evaluate(`(() => {
@@ -716,6 +721,49 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  grid tool: settings form adds a grid, painted cells merge to one line, Well placed on a cell leaves the room block; ${gridCli}`);
+
+    // 11. The Cast window.
+    const CAST_SRC = 'scene Court:\n  cast: Valerius, Ines\n  marks: Bench\n\nroom Court:\n  mark Bench at 100 120\n\naxis Mercy between Vengeance and "Condoning Harm"\nremember Mercy(Valerius, -3)\n\nroutine Sit(Valerius):\n  wait 1 ticks\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(CAST_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openCast()');
+    const castState = async () => (await state()).cast;
+    const castStep = async (label, gadget, fill, done) => {
+      if (fill) for (const [k, v] of Object.entries(fill)) await evaluate(`window.bespokeStudio.castField(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+      await evaluate(`window.bespokeStudio.castGadget(${JSON.stringify(gadget)})`);
+      await waitFor(label, async () => (done(await castState()) ? true : null));
+    };
+    await castStep('the add field', 'add:marks', null, () => true);
+    await waitFor('add field shown', () => evaluate(`document.querySelector('[data-window="cast"] input[name="add-name"]') !== null`));
+    await castStep('Dock added', 'add-ok', { 'add-name': 'Dock' }, (c) => c.listing.scenes[0].marks.includes('Dock'));
+    await castStep('Valerius picked', 'member:cast\u0000Valerius', null, (c) => c.member && c.member.name === 'Valerius');
+    await castStep('display name', 'set-name', { display: 'Judge Valerius' }, (c) => c.listing.names.some((n) => n.entity === 'Valerius' && n.text === 'Judge Valerius'));
+    await castStep('axis', 'axis-set', { 'axis-name': 'Justice', 'axis-low': 'Cruelty', 'axis-high': 'Leniency' }, (c) => c.listing.axes.some((a) => a.name === 'Justice'));
+    await castStep('Valerius again', 'member:cast\u0000Valerius', null, (c) => c.member && c.member.name === 'Valerius');
+    await castStep('starting values', 'set-values', { 'value:Justice': '8', 'value:Mercy': '5' }, (c) => c.listing.values.some((v) => v.axis === 'Justice' && v.value === 8) && c.listing.values.some((v) => v.axis === 'Mercy' && v.value === 5));
+    s = await state();
+    if (s.cast.error || s.requester) throw new Error(`cast edits: ${s.cast.error} ${s.requester}`);
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const castAfter = await evaluate(SNAPSHOT);
+    const castText = Buffer.from(castAfter['main.bespoke'].b64, 'base64').toString('latin1');
+    const castWant = 'scene Court:\n  cast: Valerius, Ines\n  marks: Bench\n  marks: Dock\nname Valerius: "Judge Valerius"\n\nroom Court:\n  mark Bench at 100 120\n  mark Dock at 159 94\n\naxis Mercy between Vengeance and "Condoning Harm"\naxis Justice between Cruelty and Leniency\nremember Justice(Valerius, 8)\nremember Mercy(Valerius, 5)\n\nroutine Sit(Valerius):\n  wait 1 ticks\n';
+    if (castText !== castWant) throw new Error(`cast save:\n${JSON.stringify(castText)}\nwanted:\n${JSON.stringify(castWant)}`);
+    let castCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-cast-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), castText);
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['run', path.join(dir, 'main.bespoke'), '--headless', '--ticks', '1', '--facts'], { encoding: 'utf8' });
+        if (run.status !== 0 || !/Justice\(Valerius, 8\)/.test(run.stdout)) throw new Error(`bespoke run after the cast editor:\n${run.stdout.slice(-800)}${run.stderr}`);
+        castCli = 'bespoke run holds Justice(Valerius, 8)';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  cast editor: a mark with its room line, a display name, an axis, and starting values, each one checked line; ${castCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

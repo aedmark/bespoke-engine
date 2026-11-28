@@ -131,6 +131,26 @@ export fn studio_write_room(main_ptr: [*]const u8, main_len: usize, edit_ptr: [*
     return if (ok) 1 else 0;
 }
 
+/// Lists the main script's cast, display names, axes, starting values, and code as JSON in the
+/// result buffer (P47-05, D-202). 1 listed, 0 the check's JSON instead, -1 out of memory.
+export fn studio_cast(main_ptr: [*]const u8, main_len: usize) i32 {
+    const ok = project.cast(main_ptr[0..main_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+/// Writes one cast edit record and checks the project. 1 written, 0 refused (JSON says why),
+/// -1 out of memory.
+export fn studio_write_cast(main_ptr: [*]const u8, main_len: usize, edit_ptr: [*]const u8, edit_len: usize) i32 {
+    const ok = project.write_cast(main_ptr[0..main_len], edit_ptr[0..edit_len]) catch |err| switch (err) {
+        error.UnwritableName => {
+            _ = project.refuse_room("a name holds a double quote, which a script line cannot write") catch return -1;
+            return 0;
+        },
+        else => return -1,
+    };
+    return if (ok) 1 else 0;
+}
+
 /// Copies the table's bytes for `path` into the blob, so the page reads back a script the
 /// module edited. 1 found, 0 not in the table.
 export fn studio_file(path_ptr: [*]const u8, path_len: usize) i32 {

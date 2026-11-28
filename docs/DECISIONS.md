@@ -2550,6 +2550,21 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** editing grid lines in place, rejected as much more splicing for a block authors rarely annotate; one line per cell, rejected because a painted floor would run to hundreds of lines; letting the grid's `place` win silently, rejected because a mark would have two positions in the script and only one would count; painting only, rejected because a grid could not be made from nothing.
 
+## D-202 The Cast Editor Adds Names, Display Names, Axes, and Starting Values as Single Lines; Routines Stay Text (2026-11-27, status: accepted; P47-05)
+
+**Context.** P47-05 covers characters, routines, values, red lines, dilemmas, and appeals (Phase 45): six kinds of declaration, too many for one reviewable change. D-200 item 2 deferred adding marks and props to it. A character's starting value is a top-level `remember <Axis>(<Character>, N)` statement today, routines are statement bodies, and a scene's `cast:`, `props:`, and `marks:` lines may repeat, each later one belonging to the most recent scene. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **Cast and values first.** P47-05 is a Cast window: per scene, its cast, props, and marks; adding a name to a scene; display names (`name <Thing>: "<text>"`); value axes; and each character's starting values. Dilemmas with their tiers, leans, drift, and appeals, and red lines, become P47-13.
+2. **Routines are listed, not edited.** The window lists each character's routines and cue handlers and opens the read-only script view at the line; editing statement bodies would make the Studio a script editor, which it is not.
+3. **Starting values edit their own lines.** The editor rewrites an existing top-level `remember <Axis>(<Character>, N)` line in place, or adds one directly after that axis's declaration; no language change.
+4. **A new name is a new list line.** Adding a mark, prop, or cast member writes `  marks: <Name>` (or `props:`, `cast:`) as a new line at the end of the scene's block; the lines the author wrote are untouched.
+5. **As every Studio write:** each change touches one line or adds one, keeps the file's line endings, and is checked with the compiler before it is kept (D-197 item 4); Save writes after the on-disk check (D-196 item 5).
+
+**Consequences.** Unlike the room and grid editors, which own whole blocks, the cast editor edits single lines, so the parser records the line of each display name, axis declaration (with its `drift step` lines), top-level `remember`, and cue handler, and the supported `compiler.cast_sources` reports them (built 2026-11-27, session 132). A new display name goes after the block of the first scene that lists the thing, a new axis after the last axis, and a new starting value after its axis; changing an axis's poles rewrites only its `axis` line. The room, grid, and cast editors share one edit-and-check routine in the Studio module. `bespoke-studio.wasm` went from 554,183 to 571,805 bytes. A name added to a scene that has a room block also needs a position there (D-199 item 4), so adding a mark or prop to such a scene writes its room-block line in the same checked edit, at its default spot.
+
+**Alternatives:** all of Phase 45 in one item, rejected as too large to review; editing routine bodies, rejected because it is a script editor; a new `values <Character>:` declaration owned by the editor, rejected to avoid a language change; appending to the existing list line, rejected because it rewrites a line the author wrote.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
