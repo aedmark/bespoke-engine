@@ -214,7 +214,7 @@
 <div class="dos-titlebar" aria-hidden="true"><span class="dos-close">[&#9632;]</span><span class="dos-title">&#9552; STATE.TXT &#9552;</span><span class="dos-zoom">[&#8593;]</span></div>
 <div class="hero">
 
-<p class="eyebrow">BeSpoke Engine 1.1.0 &middot; 27 November 2026</p>
+<p class="eyebrow">BeSpoke Engine 1.1.0, plus BeSpoke Studio on <code>main</code> &middot; 28 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
@@ -235,7 +235,7 @@
 <div class="facts">
   <div class="fact"><b>21</b><span>playable games and proofs, from a tavern heist to a sunken vault</span></div>
   <div class="fact"><b>21</b><span>of them play in a web page, no install</span></div>
-  <div class="fact"><b>700+</b><span>automated checks, 51 conformance specs, and 19 recorded play-throughs</span></div>
+  <div class="fact"><b>1,100+</b><span>automated checks, 60 conformance specs, and 19 recorded play-throughs</span></div>
   <div class="fact"><b>0</b><span>outside libraries in the core engine</span></div>
   <div class="fact"><b>100%</b><span>repeatable: same inputs, same game, every time</span></div>
 </div>
@@ -243,7 +243,7 @@
 <h2 id="minute">In one minute</h2>
 <p>Most game engines are built around graphics and physics, and the story is a pile of small scripts attached to objects. BeSpoke turns that around. At its centre is a plain record of everything that is true in the game world, a clock that moves in counted steps, and characters who work through their own to-do lists. Pictures and sound only watch that world and show it.</p>
 <p>That one choice buys a lot. Saving is exact. Rewinding is instant. A game behaves identically on a laptop, in a browser, or on a test server with no screen at all. A whole village of characters can get hungry, steal, gossip, and make arrests without anyone writing those events down, and a writer can still say exactly what must happen for the story to move on.</p>
-<p>You write a game in a short, readable language (rooms, people, routines, conversations, rules), and the engine compiles it and runs it in a desktop window, a single web page, or a text-only test run.</p>
+<p>You write a game in a short, readable language (rooms, people, routines, conversations, rules), and the engine compiles it and runs it in a desktop window, a single web page, or a text-only test run. BeSpoke Studio, a workspace in one web page, edits the same scripts and art with painting, room, cast, dilemma, and dialogue windows, plays the game beside them, and exports it as one page.</p>
 
 <h2 id="ideas">The four ideas everything rests on</h2>
 <div class="big">
@@ -321,7 +321,8 @@
 <h3>Art, structure, and translation</h3>
 <div class="cards">
   <div class="card"><h3>True-colour pixel art</h3><p>Draw scenes, characters, and props in scripts or import PNG files with no outside image library. Characters and props switch appearances as facts change, carry attached parts, and animate water, fire, and lights via 60 Hz palette colour cycling.</p><p class="hood"><b>Under the hood:</b> 320x180 RGBA art scaled 4x, QOI-compressed in <code>BSP1</code> packages, <code>look</code> appearances (<code>Looks</code>), clickable <code>area</code>s, <code>part</code> offsets, and <code>cycle</code> declarations stored in an optional <code>CYCL</code> section.</p></div>
-  <div class="card"><h3>Split scripts and clear names</h3><p>Keep large projects organized across files with <code>include</code>, give things readable player names, and replace every engine sentence for your own style or language.</p><p class="hood"><b>Under the hood:</b> canonical <code>include</code> expansion with per-file error maps, UTF-8 <code>name</code> lines, whole-sentence <code>phrase</code> templates, and isolated <code>#</code> engine bookkeeping.</p></div>
+  <div class="card"><h3>Split scripts and clear names</h3><p>Keep large projects organized across files with <code>include</code>, give things readable player names, and replace every engine sentence for your own style or language. A game project rebuilds when any included script or picture changes.</p><p class="hood"><b>Under the hood:</b> canonical <code>include</code> expansion with per-file error maps, UTF-8 <code>name</code> lines, whole-sentence <code>phrase</code> templates, isolated <code>#</code> engine bookkeeping, and <code>bespoke compile --deps</code> dependency files.</p></div>
+  <div class="card"><h3>Rooms and conversations as blocks</h3><p>Place a room's spots and props by their pixel position on the art, join spots with walkways, and add doorways to other rooms. Write a conversation once as a named block and run it from anywhere it is needed.</p><p class="hood"><b>Under the hood:</b> <code>room &lt;Scene&gt;:</code> blocks with <code>mark</code>, <code>prop</code>, <code>walkway</code>, and <code>exit</code> lines (exits in an <code>EXIT</code> package section); <code>dialogue &lt;Name&gt;:</code> blocks run by <code>talk</code>, compiled to exactly the code of the same lines written inline.</p></div>
 </div>
 
 <h3>Sound and music, built in</h3>
@@ -333,9 +334,19 @@
 <h3>Runs anywhere it is pointed</h3>
 <div class="cards">
   <div class="card"><h3>Desktop window</h3><p>A resizable window with verbs, an inventory, speech, a timeline, save slots, and a state inspector.</p><p class="hood"><b>Under the hood:</b> SDL2, a fixed 1280x720 frame letterboxed to any window size.</p></div>
-  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls, as either a full stage canvas or a text-first transcript with an optional room picture.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~631 KB for the stock engine, ~1,074 KB with all nineteen browser proof demos) embedded via the <code>stage</code> or <code>--template text</code> scaffold.</p></div>
+  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls, as either a full stage canvas or a text-first transcript with an optional room picture.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~650 KB for the stock engine, ~1,072 KB with all nineteen browser proof demos) embedded via the <code>stage</code> or <code>--template text</code> scaffold.</p></div>
   <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick, or feed scripted commands and assert final facts. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code> (with <code>--input</code>, <code>--facts</code>, and <code>--seed N</code>).</p></div>
   <div class="card"><h3>See inside the world</h3><p>Pause and open the state inspector: a map of who relates to what, why each dialogue option is offered or hidden, and what is about to expire.</p><p class="hood"><b>Under the hood:</b> a fact graph with keyboard and mouse navigation and relation filters, in both window and browser.</p></div>
+</div>
+
+<h3>BeSpoke Studio: make the game in the browser</h3>
+<div class="cards">
+  <div class="card"><h3>A workspace of windows</h3><p>One web page with draggable windows, menus, and dialogs that opens a project folder, checks its scripts, and saves only the files you changed. If a part fails to load, the rest keeps working.</p><p class="hood"><b>Under the hood:</b> <code>site/studio.html</code>, built from <code>studio/</code>; scripts are checked and built by the engine's own compiler in WebAssembly; every edit is checked before it is kept.</p></div>
+  <div class="card"><h3>Paint the art</h3><p>Edit a game's PNG pictures with pencil, fill, picker, zoom, undo, and frame previews, make new sheets, and import PNGs in the game's palette.</p><p class="hood"><b>Under the hood:</b> PNGs written by the Studio's own encoder and read back by the engine's decoder; new images add one <code>image</code> line.</p></div>
+  <div class="card"><h3>Lay out rooms</h3><p>Drag spots and props over the room's picture, draw walkways and doorways, and paint the fire, smoke, and water grid.</p><p class="hood"><b>Under the hood:</b> writes each scene's room and grid blocks, in the file's own line endings.</p></div>
+  <div class="card"><h3>Cast, values, and dilemmas</h3><p>Name characters and props, give them values and starting points, write a dilemma in a form and preview which answer a character lands on, and tick their red lines.</p><p class="hood"><b>Under the hood:</b> the preview uses the engine's own tier arithmetic.</p></div>
+  <div class="card"><h3>Map and write dialogue</h3><p>See each conversation as a tree with every choice's condition on its arrow, get a warning for a choice that can never appear, and write dialogue blocks with the map redrawn as you type.</p><p class="hood"><b>Under the hood:</b> the same never-offered warning the command-line compiler gives.</p></div>
+  <div class="card"><h3>Play, inspect, export</h3><p>Play the game beside the editors, list its live facts and jump to the script line that wrote one, then download it as one HTML page, stage or text, that opens from disk.</p><p class="hood"><b>Under the hood:</b> a separate play module takes the built package, so a game that fails never takes the Studio down; an export is <code>bespoke init</code>'s own page with the license kept.</p></div>
 </div>
 
 <h2 id="language">The language, in a few lines</h2>
@@ -396,8 +407,8 @@ routine Inspector(Moss):
   <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>), and browser embeds use a matching 23-function export contract; anything unlisted is internal.</li>
   <li><strong>1.0 baseline file formats.</strong> Packages use tagged, length-prefixed <code>BSP1</code> format-1 sections (web builds link only the sections a game uses), saves use checksummed <code>BSV1</code> format 1 with <code>save version N</code> migration, and pre-1.0 formats are retired ahead of the 1.0 freeze (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
   <li><strong>Hardened input.</strong> The lexer, parser, code generator, QOI and PNG decoders, include loader, music parser, command interpreter, and checksum-resealed package and save loaders run under bounded mutation tests, and malformed inputs fail cleanly before mutating game state.</li>
-  <li><strong>Editor support.</strong> A VS Code syntax grammar generated from the compiler's own word list, so it cannot fall out of date.</li>
-  <li><strong>A recorded decision trail.</strong> Over 190 numbered design decisions (through D-191), each with its context, the alternatives rejected, and when to revisit it.</li>
+  <li><strong>Editor support.</strong> A VS Code syntax grammar generated from the compiler's own word list, so it cannot fall out of date, and BeSpoke Studio for art, rooms, cast, dilemmas, and dialogue.</li>
+  <li><strong>A recorded decision trail.</strong> Over 200 numbered design decisions (through D-207), each with its context, the alternatives rejected, and when to revisit it.</li>
 </ul>
 
 <h3>Platforms</h3>
@@ -466,13 +477,15 @@ routine Inspector(Moss):
   <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
   <li><strong>Pre-1.0 files are retired.</strong> BeSpoke 1.1 reads <code>BSP1</code> format-1 packages (with optional <code>CYCL</code> sections skipped cleanly by 1.0 readers) and <code>BSV1</code> version-1 saves; packages and saves from before 1.0 must be rebuilt from their scripts.</li>
   <li><strong>Small writing gaps:</strong> a one-shot <code>when</code> rule body cannot read its trigger's variables yet (use <code>when each</code> or <code>on cue</code>); a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options; and the built-in 5x7 canvas font covers ASCII, Latin-1 Supplement, and common Latin Extended-A letters and punctuation while unsupported scripts render as <code>?</code>.</li>
+  <li><strong>The Studio is new.</strong> It is on <code>main</code>, not yet in a release or on the published site. Its automated checks drive it in headless Chrome; dragging and painting by hand, real folder write prompts, file pickers, and downloads are still to be tried by hand. It edits routines and handlers as script text only, and a block it rewrites loses the comments inside it (it asks first).</li>
   <li><strong>Deliberately out of scope:</strong> 3D, physics, and networked multiplayer. BeSpoke is for narrative and systemic games.</li>
 </ul>
 </div>
 
 <h2 id="next">What is next</h2>
 <ul>
-  <li><strong>After 1.1:</strong> BeSpoke Studio (browser editors for pixel art, rooms, dialogue, and values) and parser-adventure ergonomics (dynamic dropped-item scope, multi-phrase verb aliases, multi-file build tracking, and scene-transition actor sync).</li>
+  <li><strong>Hand-testing the Studio,</strong> then releasing it.</li>
+  <li><strong>Parser-adventure ergonomics:</strong> dynamic scope for dropped and moved items, multi-phrase verb aliases, and scene-transition sync for parser actors.</li>
   <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>
 
@@ -481,11 +494,12 @@ routine Inspector(Moss):
   <li><strong>Play.</strong> Open any page in the repository's <code>site/</code> folder in a browser, or run a demo in a window with <code>zig build run-proof -- --tavern</code>.</li>
   <li><strong>Download.</strong> The <a href="https://github.com/aedmark/bespoke-engine/releases/latest">latest release</a> has a static Linux command-line tool, an SDL2 desktop build, and the browser runtime.</li>
   <li><strong>Make a game.</strong> Follow <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/FIRST_GAME.md">FIRST_GAME.md</a> from <code>bespoke init</code> to a single HTML file you can upload anywhere. The tutorial is run by CI, so it works as written.</li>
+  <li><strong>Edit in the browser.</strong> Open <code>site/studio.html</code> from the repository in a browser and choose your project folder (browsers without folder access open files instead, and save edits as downloads).</li>
   <li><strong>Go deeper.</strong> The <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/AUTHORING.md">authoring guide</a>, the <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/ARCHITECTURE.md">architecture</a>, and the <a href="https://github.com/aedmark/bespoke-engine">source on GitHub</a>.</li>
 </ol>
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
-<footer>BeSpoke Engine 1.1.0 &middot; status as of 27 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<footer>BeSpoke Engine 1.1.0 and <code>main</code> &middot; status as of 28 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 <div class="dos-status" aria-hidden="true"><span><b>&#9658;</b> Ready</span><span><b>Mode</b> Read-only</span></div>
 </div>
 </main>

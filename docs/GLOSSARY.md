@@ -16,6 +16,7 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | host | The program that starts a script and asks the engine for ticks: the desktop window, a headless test, the browser page, or a game's own `main.zig` | `src/host.zig` (the host kit) | runner, harness (except for the stock runner `src/runner.zig`) |
 | tick | One step of the game clock. Everything that happens, happens on a tick. One tick per second by default, adjustable while playing; in a game with `clock: turns`, one tick per player action (D-188) | `world.current_tick`, `host.tick` | frame (a frame is a redraw, at 60 per second, unrelated to ticks) |
 | peripheral | Anything that only shows or plays the world: the window, the canvas, audio. It sends player input to the host as actions and never changes facts | `DisplayBridge`, `AudioBridge` | display bridge (in user copy) |
+| Studio | BeSpoke Studio, the one-page browser workspace that edits a project's scripts and art, plays the game, and exports it as one page | `studio/`, `site/studio.html` (D-192) | IDE, editor app |
 
 ## The world
 
@@ -66,8 +67,10 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | cast | The characters in a scene | `cast:` | actors (fine in code) |
 | prop | An object in a scene the player can look at or use | `props:`; a hotspot in the map code | hotspot (in user copy) |
 | mark | A named spot in a scene where characters stand and walk to | `marks:`; a waypoint in the map code | waypoint (in user copy) |
+| room block | A scene's layout in art pixels: where each mark and prop stands, the walkways between marks, and the exits to other scenes | `room <Scene>:` (D-199) | layout file, room script |
 | verb | A player action from the verb bar: Walk, Look, Talk, Take, Use | `verb` | |
 | choice | A dialogue option, shown only while its `if` or `where` condition holds | `choice` (D-046) | dialogue tree, flag |
+| dialogue block | A named conversation of `say`, `choice`, and `talk` lines, run from any handler or routine with `talk <Name>`; it plays exactly as the same lines written inline | `dialogue <Name>:` (D-206) | sub-dialogue, dialogue file |
 | path | One of several alternative routes through a puzzle; choosing one locks the others | `path` (D-052) | stageplay path (in user copy) |
 | command | A typed instruction such as `open the door`, matched against the script's words | `command`, `alias` (D-057) | parser |
 | draft | A four-note tune that acts as a spell when woven | `draft` (D-029) | |

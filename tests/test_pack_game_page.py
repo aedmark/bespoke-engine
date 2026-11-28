@@ -53,3 +53,19 @@ class PackGamePageTests(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("refusing to overwrite", result.stderr)
         self.assertEqual(old, out.read_bytes())
+
+
+class StudioExportShapeTests(unittest.TestCase):
+    """The Studio swaps the same loader the packer swaps (P47-07, D-207)."""
+
+    def test_studio_loader_is_the_packer_loader_in_each_init_shell(self):
+        from tools.build_studio import SHELL_LOADER, SHELLS
+        from tools.pack_game_page import LOADER as PACKER_LOADER
+
+        for kind, path in SHELLS.items():
+            with self.subTest(kind=kind):
+                shell = path.read_text(encoding="utf-8").replace("{{name}}", "sunken_vault")
+                matches = list(PACKER_LOADER.finditer(shell))
+                self.assertEqual(len(matches), 1)
+                self.assertEqual(matches[0][0], SHELL_LOADER.replace("{{name}}", "sunken_vault"))
+                self.assertEqual(shell.count("</body>"), 1)

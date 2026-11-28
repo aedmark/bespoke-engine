@@ -68,13 +68,14 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 | --- | --- |
 | Relational spine | Facts in one fixed memory block, expiry ticks, single-value properties, multi-clause pattern queries, raw-byte snapshots with a checksum |
 | VM & fibers | Cooperative routines, `wait` / `wait until`, priority interrupts, edge-triggered `when` rules |
-| Language | Hand-written lexer, parser, and code generator; `bespoke check` diagnostics with line and column |
+| Language | Hand-written lexer, parser, and code generator; `bespoke check` diagnostics with line and column; `room` blocks placing marks, props, walkways, and exits in art pixels; `dialogue` blocks run by `talk` |
 | Spatial | Waypoint graphs, A* pathfinding, scene partitioning, hotspots, portals |
 | Narrative | Dialogue choices pruned by facts, NPC beliefs, values, red lines, dilemmas and persuasion, derived hints, private-hand decisions, spellbooks, item combining and transfer, musical drafts on a distaff |
 | Art & Formats | True-colour QOI pixel art from PNGs or inline scripts, `look` appearances, clickable `area`s and attached `part`s, `include` files, `clock: turns`, `BSP1` format-1 packages, and `BSV1` version-1 saves |
 | Emergent society | Autonomous needs-driven agents, witnesses, rumor spread, and justice cascades over the fact store, configured per game: any roster, needs, roles, and places (`src/society.zig`) |
 | Time | Rewind and timeline scrubbing; temporary branch worlds on a countdown (`TemporalHypervisor`) |
 | Peripherals | SDL2 window with verb bar and HUD, procedural chiptune audio, CRC32-checked `.sav` slots, `wasm32-freestanding` target |
+| Studio | `site/studio.html`, one browser page on `main` (not yet released): paint PNG art, lay out rooms and grids, edit cast, values, dilemmas, and dialogue, play the game beside the editors with its live facts, and export it as one HTML page |
 
 ---
 
@@ -97,6 +98,10 @@ zig build run -- check scenarios/tavern_heist.bespoke
 zig build run -- compile scenarios/tavern_heist.bespoke -o scenarios/tavern_heist.bspk
 zig build run -- run scenarios/tavern_heist.bspk --headless
 
+# BeSpoke Studio: rebuild its page after changing studio/, then open site/studio.html
+zig build studio
+python3 tools/build_studio.py
+
 # Start your own game beside this checkout, then build and test it
 ./zig-out/bin/bespoke init lighthouse
 cd lighthouse && zig build test && zig build run
@@ -113,6 +118,7 @@ The repository has three layers:
 | `src/` | The engine, exported as the `bespoke` module and built as the `bespoke` CLI |
 | `scenarios/` | Sample `.bespoke` scripts: game content the stock CLI runs |
 | `proofs/` | Proofs of concept: Zig programs that drive the engine to demonstrate a feature end to end, built as `bespoke-proofs` |
+| `studio/` | BeSpoke Studio's sources, built into `site/studio.html` |
 
 ---
 
@@ -154,6 +160,7 @@ zig build test-proofs                     # every proof's tests
 
 - A one-shot `when` rule's body cannot use its trigger's variables (`D-161`); `when each` (`D-186`) and `on cue` handler bodies can.
 - A society has one enforcer.
+- BeSpoke Studio is checked in headless Chrome only; dragging and painting by hand, folder write prompts, file pickers, and downloads have not been hand-tested, and it is not yet on the published site (`P47-01` to `P47-15`).
 - All sixteen windowed proofs and both headless proofs passed the 1.0.0 [release hand-test](docs/runbooks/release-hand-test.md) on Linux (2026-11-26, `P48-05`); The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser. A project made by `bespoke init` builds, tests, and runs on Linux and macOS in its own GitHub CI; Windows is not a release target until a Windows contributor maintains it (`D-143`). The uploaded showcase site is checked by hand by the maintainer (`D-074`).
 - The showcase homepage features The Harbour, and all nineteen proofs have their own standalone pages in `site/`. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (`D-047`, `D-122`). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
@@ -181,6 +188,7 @@ The [documentation map](docs/README.md) says which document owns which fact. The
 | [`docs/manual.html`](docs/manual.html) | Standalone interactive 3x What/How/Why manual and developer guide |
 | [`docs/state.html`](docs/state.html) | What the engine can do today, for newcomers and for development teams |
 | [`site/index.html`](site/index.html) | Public showcase website; its gallery links one standalone page per proof |
+| [`site/studio.html`](site/studio.html) | BeSpoke Studio, the browser workspace for editing, playing, and exporting a game |
 | [`docs/whitepaper.md`](docs/whitepaper.md) | The original vision statement (2026-11-04), kept as written |
 
 ---

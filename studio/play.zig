@@ -84,7 +84,96 @@ fn load(rt: *wasm.WasmRuntime) anyerror!void {
     live = true;
 }
 
+// ------------------------------------------------------------ the text page (P47-07, D-207)
+//
+// An exported game in `bespoke init`'s text shell (D-191) runs deck 1: the handed package with
+// the text template's transcript, scene name, and typed-command turn, as `text_web.zig.tmpl`
+// writes them, minus that template's starter intro line. The shell reads these exports.
+
+var interpreter: bespoke.command.Interpreter = .{};
+var output: [8192]u8 = undefined;
+var output_len: usize = 0;
+var scene_buf: [128]u8 = undefined;
+var scene_len: usize = 0;
+
+export fn game_text_ptr() [*]const u8 {
+    return &output;
+}
+export fn game_text_len() usize {
+    return output_len;
+}
+export fn game_text_clear() void {
+    output_len = 0;
+}
+export fn game_scene_ptr() [*]const u8 {
+    return &scene_buf;
+}
+export fn game_scene_len() usize {
+    return scene_len;
+}
+export fn game_has_picture() u8 {
+    return 1;
+}
+
+fn append(comptime fmt: []const u8, args: anytype) void {
+    const line = std.fmt.bufPrint(output[output_len..], fmt ++ "\n", args) catch return;
+    output_len += line.len;
+}
+
+fn update_scene(rt: *wasm.WasmRuntime) void {
+    const world = rt.active_world();
+    const scene = rt.virtual_machine().current_scene orelse {
+        scene_len = 0;
+        return;
+    };
+    const text = world.display_text(scene) orelse world.get_entity_name(scene) orelse "";
+    scene_len = @min(text.len, scene_buf.len);
+    @memcpy(scene_buf[0..scene_len], text[0..scene_len]);
+}
+
+fn load_text(rt: *wasm.WasmRuntime) anyerror!void {
+    try load(rt);
+    interpreter = .{};
+    output_len = 0;
+    update_scene(rt);
+}
+
+fn after_text_tick(rt: *wasm.WasmRuntime) anyerror!void {
+    update_scene(rt);
+    var lines: [16]bespoke.host.SpeechLine = undefined;
+    const count = bespoke.host.speech_lines(rt.active_world(), rt.virtual_machine(), &lines);
+    for (lines[0..count]) |line| {
+        if (std.mem.eql(u8, line.speaker, "Scene")) {
+            append("{s}", .{line.text});
+        } else append("{s}: {s}", .{ line.speaker, line.text });
+    }
+}
+
+fn typed_text(rt: *wasm.WasmRuntime, line: []const u8) anyerror!void {
+    const program = rt.compiled_program() orelse return;
+    const actor = rt.player() orelse return;
+    var reply_buf: [256]u8 = undefined;
+    const reply = try bespoke.host.run_command(rt.virtual_machine(), program, &interpreter, actor, line, &reply_buf);
+    if (reply.text) |text| {
+        append("{s}", .{text});
+        rt.set_banner(text);
+    }
+    if (reply.turn) {
+        try rt.step_tick();
+        var guard: usize = 0;
+        while (rt.spatial_system().is_moving(actor) and guard < 256) : (guard += 1) {
+            try rt.step_tick();
+        }
+    }
+    update_scene(rt);
+}
+
 comptime {
-    // The command bar as `bespoke init` games have it (D-057), so a typed game plays here too.
-    wasm.export_runtime(&[_]wasm.Deck{.{ .title = "STUDIO PLAY", .load = load, .command_bar = true }});
+    wasm.export_runtime(&[_]wasm.Deck{
+        // Deck 0, the Play window and the stage page: the command bar as `bespoke init` games
+        // have it (D-057), so a typed game plays here too.
+        .{ .title = "STUDIO PLAY", .load = load, .command_bar = true },
+        // Deck 1, the text page (D-207).
+        .{ .title = "STUDIO TEXT", .load = load_text, .after_tick = after_text_tick, .on_typed = typed_text, .keyed = false },
+    });
 }

@@ -6,8 +6,8 @@
 
 The page is one file: studio/page.html with the engine's 5x7 font table (read out of the
 Studio's wasm module by studio/font_table.js, so src/display/font.zig stays its one source),
-the version from build.zig.zon, the Studio and play wasm modules as base64 (D-195), and the
-eight scripts, inlined at their markers. Nothing else in the repository is read or changed.
+the version from build.zig.zon, the Studio and play wasm modules as base64 (D-195), `bespoke init`'s two page shells and the
+license for page export (D-207), and the eight scripts, inlined at their markers. Nothing else in the repository is read or changed.
 """
 
 import argparse
@@ -23,6 +23,12 @@ STUDIO = ROOT / "studio"
 STUDIO_PATH = ROOT / "site" / "studio.html"
 WASM_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-studio.wasm"
 PLAY_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-play.wasm"
+# The page shells `bespoke init` writes, and the license the packer adds (P47-07, D-207): one
+# source each, so a Studio export matches a page built from a project.
+SHELLS = {"stage": ROOT / "src" / "scaffold" / "index.html.tmpl", "text": ROOT / "src" / "scaffold" / "text_index.html.tmpl"}
+LICENSE = ROOT / "LICENSE"
+# The generated loader the packer replaces (tools/pack_game_page.py), before `{{name}}` is filled.
+SHELL_LOADER = "WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {})"
 MARKERS = ("<!--@FONT-->", "<!--@BUILD-->", "<!--@WINDOWS-->", "<!--@PLAY-->", "<!--@PAINT-->", "<!--@ROOM-->", "<!--@CAST-->", "<!--@DILEMMA-->", "<!--@TALK-->", "<!--@APP-->")
 
 
@@ -47,14 +53,26 @@ def render(wasm: bytes, play: bytes, font: dict) -> str:
     for marker in MARKERS:
         if page.count(marker) != 1:
             raise SystemExit(f"studio/page.html must contain {marker} exactly once")
+    shells = {}
+    for kind, path in SHELLS.items():
+        text = path.read_text(encoding="utf-8")
+        if text.count(SHELL_LOADER) != 1:
+            raise SystemExit(f"{path.relative_to(ROOT)} must hold the generated loader exactly once: {SHELL_LOADER}")
+        if text.count("</body>") != 1:
+            raise SystemExit(f"{path.relative_to(ROOT)} must hold one closing body tag")
+        shells[kind] = text
     build = {
         "version": version(),
         "wasm": base64.b64encode(wasm).decode("ascii"),
         "play": base64.b64encode(play).decode("ascii"),
+        "shells": shells,
+        "shellLoader": SHELL_LOADER,
+        "license": LICENSE.read_text(encoding="utf-8"),
     }
     parts = {
         "<!--@FONT-->": script("const STUDIO_FONT = " + json.dumps(font, separators=(",", ":"), sort_keys=True) + ";"),
-        "<!--@BUILD-->": script("const STUDIO_BUILD = " + json.dumps(build, separators=(",", ":")) + ";"),
+        # The shells hold their own scripts; "<\\/" keeps their closing tags out of this one.
+        "<!--@BUILD-->": script("const STUDIO_BUILD = " + json.dumps(build, separators=(",", ":")).replace("</", "<\\/") + ";"),
         "<!--@WINDOWS-->": script((STUDIO / "windows.js").read_text(encoding="utf-8")),
         "<!--@PLAY-->": script((STUDIO / "play.js").read_text(encoding="utf-8")),
         "<!--@PAINT-->": script((STUDIO / "paint.js").read_text(encoding="utf-8")),

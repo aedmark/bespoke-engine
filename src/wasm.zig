@@ -161,6 +161,9 @@ pub const Deck = struct {
     /// characters fill it, and a submitted line goes to `on_typed`.
     command_bar: bool = false,
     on_typed: ?*const fn (rt: *WasmRuntime, line: []const u8) anyerror!void = null,
+    /// False keeps the `[1]` to `[9]` keys from loading this deck, so a host can hold a deck
+    /// that only `wasm_init` names, such as a second page kind sharing one module (D-207).
+    keyed: bool = true,
 };
 
 /// A doorway between scenes, shared with desktop hosts (D-094, D-100).
@@ -1716,7 +1719,7 @@ pub const WasmRuntime = struct {
                             try self.answer(idx);
                             return .dialogue_answered;
                         }
-                        if (idx >= self.decks.len) return .none;
+                        if (idx >= self.decks.len or !self.decks[idx].keyed) return .none;
                         try self.load_deck(idx);
                         return .scenario_switched;
                     },
@@ -2261,6 +2264,24 @@ test "P32-04: the runtime loads, ticks, and switches host decks and runs their r
     // An index past the table starts on the first deck.
     try rt.load_deck(7);
     try testing.expectEqual(@as(u8, 0), rt.deck_index);
+}
+
+test "D-207: a deck that is not keyed loads only by index, never from a number key" {
+    const testing = std.testing;
+    const decks = [_]Deck{
+        .{ .title = "YARD", .load = TestDecks.load_yard },
+        .{ .title = "HIDDEN", .load = TestDecks.load_empty, .keyed = false },
+    };
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '2' }));
+    try testing.expectEqual(@as(u8, 0), rt.deck_index);
+    try testing.expectEqualStrings("Yard deck", rt.get_banner());
+    // The host still names it at start, as a page's `wasm_init` does.
+    try rt.load_deck(1);
+    try testing.expectEqualStrings("Empty deck", rt.get_banner());
 }
 
 test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeSpoke intents" {

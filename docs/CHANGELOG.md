@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio exports the game as one page (`P47-07`, `D-207`): Export page in the Project menu builds the project and downloads `<game>.html`, the stage or text page `bespoke init` writes, with the game and its runtime inside and the license kept, so it opens from disk and plays like the Play window. Nothing in the project changes. Hosts gain `Deck.keyed`, which keeps a deck off the number keys.
+
 - The Studio writes dialogue (`P47-14`, `D-206`): in the Dialogue window, a `dialogue` block opens as a form of its lines with indent and outdent buttons, and the map beside it redraws as you type. Apply rewrites the block, checked before it is kept; New dialogue starts from a template.
 
 - Dialogue blocks (`P47-15`, `D-206`): `dialogue <Name>:` holds a conversation of `speaker`, `say`, guarded and nested `choice`, `remember`, `forget`, and `talk` lines, and `talk <Name>` runs it from any handler or routine, compiling to exactly the code of the same lines written inline. An unknown or circular `talk` is refused. The Studio's dialogue map lists dialogue blocks. Existing scripts compile to the same packages.

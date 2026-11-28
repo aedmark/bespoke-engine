@@ -44,7 +44,11 @@
 //      the engine system and the dilemma behind a Chose fact;
 //  15. (P47-14, D-206) the Dialogue window edits a dialogue block from its line form, previews
 //      it, writes a new one from the template, and Save changes only those blocks; the command
-//      line plays the edited dialogue.
+//      line plays the edited dialogue;
+//  16. (P47-07, D-207) Export page turns The Sunken Vault into one text page and one stage
+//      page from init's shells, with the packer's license template, under the page budget and
+//      with nothing in the project changed; the text page, opened from disk, takes a typed
+//      turn, and the stage page draws the game.
 'use strict';
 
 const fs = require('fs');
@@ -960,6 +964,57 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  dialogue editor: an edited line previewed and written, a new dialogue from the template, Save changed only those blocks; ${dlgCli}`);
+
+    // 16. Export The Sunken Vault as one page, of each kind, and play it from disk.
+    await evaluate(WRITE_FIXTURE(VAULT));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d))`);
+    if (!((await state()).result || {}).valid) throw new Error('the Vault did not check for export');
+    const exportBefore = await evaluate(SNAPSHOT);
+    const budget = JSON.parse(fs.readFileSync(path.join(root, 'tools', 'web_budgets.json'), 'utf8')).standalonePageBytes;
+    const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+    const exported = {};
+    for (const kind of ['text', 'stage']) {
+      const r = await evaluate(`window.bespokeStudio.exportPage({ kind: '${kind}', download: false }).then((r) => r && { name: r.name, page: r.page })`);
+      if (!r || !r.page) throw new Error(`export ${kind}: ${JSON.stringify((await state()).result)}`);
+      const page = r.page;
+      const bytes = Buffer.byteLength(page, 'utf8');
+      if (bytes > budget) throw new Error(`the exported ${kind} page is ${bytes} bytes, over ${budget}`);
+      if (page.includes('instantiateStreaming') || page.includes('{{name}}')) throw new Error(`the ${kind} page kept init's loader or a placeholder`);
+      if (!page.includes(`<template id="bespoke-license"><pre>${license}</pre></template>\n</body>`)) throw new Error(`the ${kind} page lacks the packer's license template`);
+      exported[kind] = { name: r.name, page, bytes };
+    }
+    const exportAfter = await evaluate(SNAPSHOT);
+    if (JSON.stringify(exportAfter) !== JSON.stringify(exportBefore)) throw new Error('export changed the project');
+    if ((await state()).project.files.some((f) => f.dirty)) throw new Error('export marked a file edited');
+    const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-export-'));
+    try {
+      const textFile = path.join(exportDir, `${exported.text.name}.html`);
+      const stageFile = path.join(exportDir, `${exported.stage.name}-stage.html`);
+      fs.writeFileSync(textFile, exported.text.page);
+      fs.writeFileSync(stageFile, exported.stage.page);
+      await cdp.send('Page.navigate', { url: `file://${textFile}` });
+      const room = await waitFor('the exported text page', () => evaluate("(document.getElementById('room-name') || {}).textContent || null"));
+      const before = await evaluate("Number(document.getElementById('turn-count').textContent)");
+      await evaluate("(() => { document.getElementById('command').value = 'look'; document.getElementById('command-form').requestSubmit(); return true; })()");
+      const after = await waitFor('a typed turn', () => evaluate(`(() => { const n = Number(document.getElementById('turn-count').textContent); return n > ${before} ? n : null; })()`));
+      const lines = await evaluate("[...document.getElementById('turns').children].map((p) => p.textContent)");
+      const said = lines.slice(lines.indexOf('> look') + 1);
+      if (!said.length) throw new Error(`"look" printed nothing: ${JSON.stringify(lines.slice(-6))}`);
+      const title = await evaluate('document.title');
+      await cdp.send('Page.navigate', { url: `file://${stageFile}` });
+      const colours = await waitFor('the exported stage page drawn', () => evaluate(`(() => {
+        const c = document.querySelector('canvas');
+        if (!c) return null;
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        const seen = new Set();
+        for (let i = 0; i < d.length; i += 4 * 97) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+        return seen.size >= 8 ? seen.size : null;
+      })()`));
+      console.log(`ok  export: The Sunken Vault as "${title}" (${room}), text ${exported.text.bytes} and stage ${exported.stage.bytes} bytes (budget ${budget}), license kept, project unchanged; from disk "look" took turn ${before} to ${after}, the stage page draws ${colours} colours`);
+    } finally {
+      fs.rmSync(exportDir, { recursive: true, force: true });
+    }
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

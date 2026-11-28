@@ -2,6 +2,12 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 122 (2026-11-21)
+- **Work.** P45-04, value drift (D-148), on the maintainer's answers (2026-11-21): drift lines in the dilemma that fire on a fact's rise after the first weighing; a fixed threshold of 5 points per step and 2 steps per dilemma and axis; drift stops at -10 and +10 with the excess discarded and red lines fixed; points from a capped dilemma are dropped and the cap is recorded.
+- **Engine.** `dilemma.step` runs `apply_drift` for every dilemma before weighing, so drift reads last tick's weighings. Drift lines may move any declared axis. Accumulators and spent steps live on generated relations whose names hold a space (`Mercy drift`, `Mercy drift steps`), `DriftHolding` keeps each line's edge as a bitmask, and `DilemmaWeighed` marks the first weighing. `.bspk` v22 appends one drift group per dilemma after the v21 records, with `tests/fixtures/compat/v0.3.1-package-v22.bspk`.
+- **Gotcha.** The separation lint scans test scripts in `src/` too: `Baker` and `Bench` are proof entity names, so the drift tests use `Miller` and `Stool`.
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build test`, `test-fuzz`, `bench`, the Wasm builds and page rebuild, `check_web_budgets.py`, 82 Python tests, and `check_docs.py` passed; `bespoke-proofs.wasm` 672,629 bytes.
+
 ### Session 121 (2026-11-21)
 - **Work.** P45-03, dilemmas (D-146), on the maintainer's answers (2026-11-21): fixed mirrored tiers at 7 and 3; `leans N toward <Axis> when|unless <Fact>` lines inside the dilemma; its own block whose five tiers each give a line and an action, with a red-line action a compile error; neutral speaks, waits, and weighs again on new evidence; a missing value counts as 0.
 - **Engine.** `src/dilemma.zig` owns tiers, weighing, and the `DilemmaState`/`EvidenceSeen`/`Chose` lifecycle; `host.tick` steps it after decisions, appends the tier line as a `say` cue, and fires the cue. The lexer gains `dilemma` and `->`. The parser orders tier lines by axis and reports a gap or repeat on its own line. `.bspk` v21 appends dilemmas, with `tests/fixtures/compat/v0.3.1-package-v21.bspk`.

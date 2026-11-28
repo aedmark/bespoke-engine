@@ -452,6 +452,86 @@
     return player.run(built.pkg, S.project.main);
   }
 
+  // ------------------------------------------------------------ export
+
+  // The game's name for its page, in the form `bespoke init` and the packer take: a lower-case
+  // letter, then up to 31 letters, digits, or underscores. From the folder, else the script.
+  function gameName() {
+    const from = S.project.handle ? S.project.name : S.project.main.split('/').pop().replace(/\.bespoke$/i, '');
+    let n = from.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^[^a-z]+/, '').slice(0, 32).replace(/_+$/, '');
+    return n || 'game';
+  }
+
+  function base64(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+
+  // As Python's html.escape, which the packer uses for the license.
+  function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  // One page from init's shell (D-207): `{{name}}` filled as init fills it, the loader swapped
+  // as tools/pack_game_page.py swaps it, and its license template added the same way. The new
+  // loader instantiates the inlined play module, hands it the package, and resolves the
+  // `{ instance }` the shell expects; for the text shell its `wasm_init` names the play
+  // module's text deck, which no number key reaches.
+  function pageFor(kind, name, pkg) {
+    const shell = STUDIO_BUILD.shells[kind].split('{{name}}').join(name);
+    const loader = STUDIO_BUILD.shellLoader.split('{{name}}').join(name);
+    const at = shell.indexOf(loader);
+    if (at < 0 || shell.indexOf(loader, at + 1) >= 0) throw new Error(`the ${kind} shell does not hold one loader`);
+    const deck = kind === 'text' ? 1 : 0;
+    const bytes = (b) => `Uint8Array.from(atob('${b}'), c => c.charCodeAt(0))`;
+    const swapped = `WebAssembly.instantiate(${bytes(STUDIO_BUILD.play)}, {}).then(({ instance }) => { `
+      + `const e = instance.exports; const pkg = ${bytes(base64(pkg))}; `
+      + 'const p = e.play_alloc(Math.max(1, pkg.length)); if (!p) throw new Error(\'the game does not fit in memory\'); '
+      + 'new Uint8Array(e.memory.buffer, p, pkg.length).set(pkg); '
+      + `return { instance: { exports: Object.assign({}, e, { wasm_init: (d, a, b) => e.wasm_init(${deck}, a, b) }) } }; })`;
+    const page = shell.slice(0, at) + swapped + shell.slice(at + loader.length);
+    const close = page.lastIndexOf('</body>');
+    if (close < 0) throw new Error(`the ${kind} shell has no closing body tag`);
+    return `${page.slice(0, close)}<template id="bespoke-license"><pre>${escapeHtml(STUDIO_BUILD.license)}</pre></template>\n${page.slice(close)}`;
+  }
+
+  // Builds the project and downloads it as one page, stage or text (D-207). Nothing is
+  // written into the project. `opts.kind` skips the question, and `opts.download: false`
+  // returns the page without saving it, for tests.
+  async function exportPage(opts = {}) {
+    if (!await readyToBuild('Export', () => exportPage(opts))) return null;
+    let kind = opts.kind;
+    if (!kind) {
+      kind = await desk.requester(projectWindow(), {
+        title: 'Export page',
+        lines: ['One HTML file that plays the game.', 'Stage: the game drawn, played by pointer.', 'Text: typed commands, with the picture above.'],
+        buttons: [{ id: 'stage', label: 'Stage' }, { id: 'text', label: 'Text' }, { id: 'cancel', label: 'Cancel' }],
+      });
+      if (kind !== 'stage' && kind !== 'text') return null;
+    }
+    if (!STUDIO_BUILD.shells || !STUDIO_BUILD.shells[kind]) throw new Error(`this page was built without the ${kind} shell`);
+    document.body.classList.add('busy');
+    const built = runBuild(S.project.main);
+    document.body.classList.remove('busy');
+    if (!built) return null;
+    await showResult(built.result);
+    if (!built.pkg) return null;
+    const name = gameName();
+    const page = pageFor(kind, name, built.pkg);
+    if (opts.download !== false) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([page], { type: 'text/html' }));
+      a.download = `${name}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      await desk.requester(projectWindow(), { title: 'Export page', lines: [`${name}.html is downloading (${Math.ceil(page.length / 1024)} KB).`, 'It opens from disk in a browser; nothing in the project changed.'] });
+    }
+    return { name, kind, size: page.length, page: opts.download === false ? page : undefined };
+  }
+
   async function showResult(r) {
     const win = projectWindow();
     S.result = r;
@@ -1113,6 +1193,7 @@
           { id: 'open-files', label: 'Open files...' },
           { id: 'check', label: 'Check script', key: 'K' },
           { id: 'play', label: 'Play game', key: 'G' },
+          { id: 'export', label: 'Export page...', key: 'E' },
           { id: 'art', label: 'Art...' },
           { id: 'rooms', label: 'Rooms...' },
           { id: 'cast', label: 'Cast...' },
@@ -1145,6 +1226,7 @@
       case 'open-files': return openFiles();
       case 'check': return check();
       case 'play': return play();
+      case 'export': return exportPage();
       case 'win-play': return player.open();
       case 'art':
       case 'win-art': return painter.openArt();
@@ -1206,6 +1288,7 @@
     chooseScript,
     check,
     play,
+    exportPage,
     // Hands raw bytes to the play window as if they were a built package, so a test can show
     // that a package the runtime refuses leaves a working Studio.
     playBytes: (bytes) => player.run(Uint8Array.from(bytes)),

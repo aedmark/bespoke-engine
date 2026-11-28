@@ -96,7 +96,7 @@ All public methods on `DisplayBridge`, `RenderFrame`, and `DisplayWindow` are su
 
 ## Browser decks
 
-Supported `wasm` declarations are `Deck`, `ScriptDeckOptions`, `WasmRuntime`, `WasmVerb`, `VerbCues`, `Exit`, `RgbaColor`, `BrowserEventKind`, `BrowserInputEvent`, `BrowserActionTag`, `script_deck`, `script_deck_with`, and `export_runtime`. The fields of `Deck`, `ScriptDeckOptions`, `VerbCues`, `Exit`, and `BrowserInputEvent` are supported host configuration; `WasmRuntime` fields are not.
+Supported `wasm` declarations are `Deck`, `ScriptDeckOptions`, `WasmRuntime`, `WasmVerb`, `VerbCues`, `Exit`, `RgbaColor`, `BrowserEventKind`, `BrowserInputEvent`, `BrowserActionTag`, `script_deck`, `script_deck_with`, and `export_runtime`. The fields of `Deck`, `ScriptDeckOptions`, `VerbCues`, `Exit`, and `BrowserInputEvent` are supported host configuration; `WasmRuntime` fields are not. `Deck.keyed = false` keeps a deck off the `[1]` to `[9]` keys, for a deck only `wasm_init` names (D-207).
 
 A deck callback receives `*WasmRuntime`, but only these methods are supported: `set_banner`, `get_banner`, `active_world`, `spatial_system`, `virtual_machine`, `compiled_program`, `player`, `set_player`, `queue_message`, `answer`, `attach_hypervisor`, `clock`, `bind`, `step_tick`, `record_snapshot`, `scrub_to_tick`, `deck_action`, `submit_command`, `trigger_catalyst`, `capture`, and `render_frame`. Runtime fields are internal.
 
