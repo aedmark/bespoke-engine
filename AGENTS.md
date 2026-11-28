@@ -107,6 +107,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `docs/GLOSSARY.md` | Engine and language terms in plain language, and which word to use in user-facing copy |
 | `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
 | `docs/runbooks/release-hand-test.md` | Release hand-test pass with a results table (P34-07) |
+| `docs/runbooks/studio-hand-test.md` | BeSpoke Studio hand-test pass, by mouse and touch, with a results table |
 | `docs/archive/` | Historical material no longer current |
 | `scheme/` | 3x manual schemas and source definitions |
 | `src/` | The engine: spine, VM, compiler, spatial, emergent society, audio, display, persistence, wasm runtime, host kit; exported as the `bespoke` module |
