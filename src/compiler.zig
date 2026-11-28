@@ -586,7 +586,15 @@ pub const DialogueNode = struct {
     line: u32,
 };
 /// A body that holds choices: a routine, a cue handler, a `when` rule, or the top level.
-pub const Conversation = struct { title: []const u8, at: ScriptLines, nodes: []const DialogueNode };
+pub const Conversation = struct {
+    title: []const u8,
+    at: ScriptLines,
+    nodes: []const DialogueNode,
+    /// For a `dialogue` block (D-206), its name and the lines it spans, which the dialogue
+    /// editor rewrites (P47-14); empty and null for a handler, routine, or the top level.
+    dialogue: []const u8 = "",
+    block: ?ScriptLines = null,
+};
 
 /// Parses `source` far enough to list every conversation with choices (P47-04, D-204), as
 /// `cast_sources` does. A guard's relation the script declares and nothing writes is marked,
@@ -685,7 +693,21 @@ pub fn dialogue_sources(arena: std.mem.Allocator, source: []const u8, files: ?Fi
     var b = Build{ .e = expanded, .a = arena, .written = written, .declared = &declared };
     // Dialogue blocks first, as written (P47-15, D-206); a handler that `talk`s one shows the
     // same lines again, expanded where it runs them.
-    for (ast.dialogues) |d| try add(&out, &b, try std.fmt.allocPrint(arena, "dialogue {s}", .{d.name}), d.line, d.body);
+    for (ast.dialogues) |d| {
+        // A dialogue is listed even without choices, so the editor can open every one.
+        b.nodes = .empty;
+        b.any = false;
+        try b.walk(d.body, 0);
+        const from = expanded.locate(d.line);
+        const to = expanded.locate(d.end_line);
+        try out.append(arena, .{
+            .title = try std.fmt.allocPrint(arena, "dialogue {s}", .{d.name}),
+            .at = .{ .script = from.file, .line = from.line, .end_line = from.line },
+            .nodes = b.nodes.items,
+            .dialogue = d.name,
+            .block = .{ .script = from.file, .line = from.line, .end_line = to.line },
+        });
+    }
     const first_line: u32 = if (parse.initial_fact_lines.items.len > 0) parse.initial_fact_lines.items[0].line else 1;
     try add(&out, &b, "Top level", first_line, ast.initial_stmts.items);
     for (ast.cue_handlers.items) |h| {

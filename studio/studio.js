@@ -843,8 +843,40 @@
     }),
   });
 
+  function dialogueCall(fn, ...args) {
+    return withCompiler((x) => {
+      const m = put(x, enc.encode(S.project.main));
+      const r = put(x, enc.encode(args[0]));
+      const status = fn === 'write' ? x.studio_write_dialogue(m.ptr, m.used, r.ptr, r.used) : x.studio_preview_dialogue(r.ptr, r.used);
+      x.studio_free(m.ptr, m.len);
+      x.studio_free(r.ptr, r.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      const j = decodeJson(x);
+      if (fn !== 'write') return j;
+      if (status === 1) return j;
+      return j.written === false ? { written: false, refused: j.refused } : { written: false, result: j };
+    });
+  }
+
   const talker = createTalk(desk, screen, {
     ready: (title) => readyToBuild(title, () => talker.open()),
+    previewDialogue: (records) => dialogueCall('preview', records),
+    // A dialogue block written and checked by the module (D-206); the page takes the script's
+    // new bytes as an edit waiting for Save.
+    writeDialogue: (records) => {
+      const r = dialogueCall('write', records);
+      if (r && r.written) for (const path of r.scripts) { const bytes = moduleFile(path); if (bytes) painterFileChanged(path, bytes); }
+      return r;
+    },
+    firstCast: () => {
+      const c = withCompiler((x) => {
+        const p = put(x, enc.encode(S.project.main));
+        const status = x.studio_cast(p.ptr, p.used);
+        x.studio_free(p.ptr, p.len);
+        return status === 1 ? decodeJson(x) : null;
+      });
+      return c && c.scenes.flatMap((sc) => sc.cast)[0];
+    },
     showResult: (r) => showResult(r),
     openScript: (path, l, c) => openScript(path, l, c),
     listDialogue: () => withCompiler((x) => {
@@ -1200,6 +1232,8 @@
     dilemmaField: (id, value) => dilemmer.field(id, value),
     openDialogue: () => talker.open().then(() => true),
     dialogueClick: (what) => talker.clickRegion(what),
+    dialogueGadget: (id) => talker.gadget(id),
+    dialogueField: (id, value) => talker.field(id, value),
     importForm: (name, bytes) => { painter.openForm({ name, bytes: Uint8Array.from(bytes) }); return true; },
     // For tests: one click of a tool on a sheet pixel, through the editor's own stroke path.
     paintAt: (name, x, y, tool) => { const e = painter.editor(name); if (!e) return false; e.paintAt(x, y, tool); return true; },

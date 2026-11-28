@@ -41,7 +41,10 @@
 //      the script at a clicked choice;
 //  14. (P47-09, D-205) the Play window's Facts panel lists a running game's facts, and Show
 //      line opens the one line that wrote a fact, lists two lines that could have, and names
-//      the engine system and the dilemma behind a Chose fact.
+//      the engine system and the dilemma behind a Chose fact;
+//  15. (P47-14, D-206) the Dialogue window edits a dialogue block from its line form, previews
+//      it, writes a new one from the template, and Save changes only those blocks; the command
+//      line plays the edited dialogue.
 'use strict';
 
 const fs = require('fs');
@@ -910,6 +913,53 @@ async function run(pageUrl) {
     });
     await evaluate("window.bespokeStudio.playGadget('play-pause')");
     console.log(`ok  facts: ${factList.length} live facts listed; Show line opens line 24, offers lines 26 and 30, and names the engine and dilemma StolenBread for Chose`);
+
+    // 15. Writing dialogue.
+    const DLG_SRC = 'scene Quay:\n  cast: Hero, Guide\n\nrelation Paid(who)\n\ndialogue AskGuide:\n  speaker Guide\n  say "Well, traveller?"\n  choice "Pay the toll." if not Paid(Hero):\n    remember Paid(Hero)\n    say "Thank you kindly."\n  choice "Goodbye.":\n    say "Come back soon."\n\nroutine Greet(Hero):\n  wait 1 ticks\n  talk AskGuide\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(DLG_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openDialogue()');
+    const dlg = async () => (await state()).dialogue;
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-edit')");
+    await waitFor('the line form', async () => ((await dlg()).edit ? true : null));
+    await evaluate(`window.bespokeStudio.dialogueField('dlg-l1', 'say "Well met, traveller."')`);
+    await waitFor('the preview', async () => (((await dlg()).preview || { nodes: [] }).nodes.some((n) => n.text === 'Well met, traveller.') ? true : null));
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-apply')");
+    await waitFor('the edit written', async () => ((await state()).project.files.find((f) => f.path === 'main.bespoke').dirty ? true : null));
+    if ((await dlg()).error) throw new Error(`dialogue apply: ${(await dlg()).error}`);
+    // A new dialogue from the template, renamed and with its own lines.
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-cancel')");
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-new')");
+    await waitFor('the template', async () => (((await dlg()).edit || {}).name === 'NewDialogue' ? true : null));
+    await evaluate(`(() => {
+      const v = { 'dlg-name': 'Farewell', 'dlg-l0': 'speaker Guide', 'dlg-l1': 'say "Off you go."', 'dlg-l2': 'choice "Wait.":', 'dlg-l3': 'say "No."' };
+      for (const [k, val] of Object.entries(v)) window.bespokeStudio.dialogueField(k, val);
+      return true;
+    })()`);
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-apply')");
+    await waitFor('Farewell written', async () => ((await dlg()).conversations.some((c) => c.dialogue === 'Farewell') ? true : null));
+    if ((await state()).requester) throw new Error(`new dialogue: ${(await state()).requester}`);
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const dlgAfter = await evaluate(SNAPSHOT);
+    const dlgText = Buffer.from(dlgAfter['main.bespoke'].b64, 'base64').toString('latin1');
+    const dlgWant = DLG_SRC.replace('say "Well, traveller?"', 'say "Well met, traveller."').replace('    say "Come back soon."\n\n', '    say "Come back soon."\n\ndialogue Farewell:\n  speaker Guide\n  say "Off you go."\n  choice "Wait.":\n    say "No."\n\n');
+    if (dlgText !== dlgWant) throw new Error(`dialogue save:\n${JSON.stringify(dlgText)}\nwanted:\n${JSON.stringify(dlgWant)}`);
+    let dlgCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-dlg-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), dlgText);
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['run', path.join(dir, 'main.bespoke'), '--headless', '--ticks', '4'], { encoding: 'utf8' });
+        if (run.status !== 0 || !run.stdout.includes('Guide: "Well met, traveller."') || !run.stdout.includes('Choices for Hero: 1. Pay the toll. 2. Goodbye.')) throw new Error(`bespoke run on the saved dialogue:\n${run.stdout.slice(-600)}${run.stderr}`);
+        dlgCli = 'bespoke run plays the edited dialogue';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  dialogue editor: an edited line previewed and written, a new dialogue from the template, Save changed only those blocks; ${dlgCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

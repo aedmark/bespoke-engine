@@ -123,6 +123,7 @@
   .field-row { flex-wrap: nowrap; align-items: center; }
   /* The dialogue map (P47-04): a tree drawn at a fractional zoom, so smoothing is fine here. */
   .talk-canvas { display: block; cursor: pointer; }
+  .dlg-indent { flex: none; width: calc(var(--depth) * 8 * var(--px)); }
   .field-row .field { flex: 1; min-width: 0; }
   .gad.selected { box-shadow: var(--in); background: var(--pen-fill); color: var(--pen-filltext); }
   .swatches { gap: var(--px); }

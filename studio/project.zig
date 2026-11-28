@@ -1160,6 +1160,17 @@ pub const Project = struct {
             try w.string(table_script(&buf, main_path, dir, c.at.script));
             try w.raw(",\"line\":");
             try w.number(c.at.line);
+            // A dialogue block's own lines as written, with each line's nesting depth, for the
+            // dialogue editor (P47-14, D-206).
+            try w.raw(",\"dialogue\":");
+            try w.string(c.dialogue);
+            if (c.block) |b| {
+                try w.raw(",\"block\":");
+                try self.json_lines(&w, &buf, main_path, dir, b);
+                const text = self.find(table_script(&buf, main_path, dir, b.script)) orelse "";
+                try w.raw(if (has_comment(text, b.line, b.end_line)) ",\"comments\":true}" else ",\"comments\":false}");
+                try write_block_lines(&w, text, b.line + 1, b.end_line);
+            }
             try w.raw(",\"nodes\":[");
             for (c.nodes, 0..) |n, j| {
                 if (j > 0) try w.raw(",");
@@ -1236,6 +1247,85 @@ pub const Project = struct {
             try w.raw("}");
         } else try w.raw("null");
         try w.raw("}");
+        return true;
+    }
+
+    /// Writes a dialogue block (P47-14, D-206) from `dialogue<TAB>Name` and one
+    /// `line<TAB>depth<TAB>text` record per line, indented two spaces a level: rewritten whole
+    /// where it stands, or added after the last dialogue block, else at the main script's end.
+    /// Checked before it is kept.
+    pub fn write_dialogue(self: *Project, main_path: []const u8, request: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const source = self.find(main_path) orelse return self.refuse_room("the project has no main script");
+        const block = (try dialogue_block(a, request)) orelse return self.refuse_room("the dialogue edit is not one the Studio understands: a one-word name, then lines that nest one level at a time");
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const conv = compiler.dialogue_sources(a, source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var buf: [1024]u8 = undefined;
+        var edits: std.ArrayList(Edit) = .empty;
+        var last: ?compiler.ScriptLines = null;
+        var existing: ?compiler.ScriptLines = null;
+        for (conv) |c| if (c.block) |b| {
+            last = b;
+            if (std.mem.eql(u8, c.dialogue, block.name)) existing = b;
+        };
+        if (existing) |b| {
+            try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, b.script)), .from = b.line, .to = b.end_line, .insert = false, .lines = block.lines });
+        } else if (last) |b| {
+            try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, b.script)), .from = b.end_line, .insert = true, .lines = block.lines });
+        } else try edits.append(a, .{ .path = main_path, .from = line_count(source), .insert = true, .lines = block.lines });
+        return self.apply_edits(a, main_path, edits.items);
+    }
+
+    /// The tree a dialogue's typed lines would make, before they are written (P47-14): the
+    /// block alone is read with the engine's parser and its nodes put in `result` as
+    /// `{"nodes":[...]}`, or `{"error":"..","line":N}` (N counted within the block) when it does
+    /// not read, so the map beside the form redraws from what is typed.
+    pub fn preview_dialogue(self: *Project, request: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const block = (try dialogue_block(a, request)) orelse return self.refuse_room("the lines nest more than one level at a time");
+        var text: std.ArrayList(u8) = .empty;
+        for (block.lines) |l| {
+            try text.appendSlice(a, l);
+            try text.append(a, '\n');
+        }
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        const conv = compiler.dialogue_sources(a, text.items, null) catch {
+            const res = compiler.check_source(a, text.items);
+            try w.raw("{\"error\":");
+            try w.string(res.message());
+            try w.raw(",\"line\":");
+            try w.number(res.line);
+            try w.raw("}");
+            return false;
+        };
+        try w.raw("{\"nodes\":[");
+        const nodes = if (conv.len > 0) conv[0].nodes else &.{};
+        for (nodes, 0..) |n, j| {
+            if (j > 0) try w.raw(",");
+            try w.raw(if (n.choice) "{\"choice\":true" else "{\"choice\":false");
+            try w.raw(",\"depth\":");
+            try w.number(n.depth);
+            try w.raw(",\"speaker\":");
+            try w.string(n.speaker);
+            try w.raw(",\"text\":");
+            try w.string(n.text);
+            try w.raw(",\"guard\":");
+            try w.string(n.guard);
+            try w.raw(",\"never\":0,\"line\":");
+            try w.number(n.line);
+            try w.raw("}");
+        }
+        try w.raw("]}");
         return true;
     }
 
@@ -1428,6 +1518,78 @@ fn engine_system(relation: []const u8) []const u8 {
     for (table) |entry| if (std.mem.eql(u8, entry[0], relation)) return entry[1];
     if (std.mem.startsWith(u8, relation, "Cell") or (std.mem.startsWith(u8, relation, "In") and std.mem.endsWith(u8, relation, "Cell"))) return "grids";
     return "";
+}
+
+/// Writes `"lines":[{"depth":D,"text":".."}]` for lines `from` to `to` of `text`: each
+/// non-blank line's nesting depth, counted from the distinct indents in order, and its text
+/// with the indent trimmed (P47-14).
+fn write_block_lines(w: *Json, text: []const u8, from: u32, to: u32) !void {
+    var indents: [64]usize = undefined;
+    var count: usize = 0;
+    var ln = from;
+    while (ln <= to) : (ln += 1) {
+        const line = text_of_line(text, ln);
+        const body = std.mem.trimStart(u8, line, " \t");
+        if (body.len == 0) continue;
+        const indent = line.len - body.len;
+        const seen = for (indents[0..count]) |i| {
+            if (i == indent) break true;
+        } else false;
+        if (!seen and count < indents.len) {
+            indents[count] = indent;
+            count += 1;
+        }
+    }
+    std.mem.sort(usize, indents[0..count], {}, std.sort.asc(usize));
+    try w.raw(",\"lines\":[");
+    var first = true;
+    ln = from;
+    while (ln <= to) : (ln += 1) {
+        const line = text_of_line(text, ln);
+        const body = std.mem.trim(u8, line, " \t");
+        if (body.len == 0) continue;
+        const indent = line.len - std.mem.trimStart(u8, line, " \t").len;
+        const depth = std.mem.indexOfScalar(usize, indents[0..count], indent) orelse 0;
+        if (!first) try w.raw(",");
+        first = false;
+        try w.raw("{\"depth\":");
+        try w.number(depth);
+        try w.raw(",\"text\":");
+        try w.string(body);
+        try w.raw("}");
+    }
+    try w.raw("]");
+}
+
+/// A dialogue edit's block text: its name and lines, indented two spaces a level under the
+/// `dialogue` line. Null when the name is not one word, a line holds a tab or is empty, or a
+/// line nests more than one level below the line before it.
+fn dialogue_block(a: Allocator, request: []const u8) !?struct { name: []const u8, lines: []const []const u8 } {
+    var records = std.mem.splitScalar(u8, request, '\n');
+    const head = records.next() orelse return null;
+    if (!std.mem.startsWith(u8, head, "dialogue\t")) return null;
+    const name = head["dialogue\t".len..];
+    if (!is_image_word(name)) return null;
+    var lines: std.ArrayList([]const u8) = .empty;
+    try lines.append(a, try std.fmt.allocPrint(a, "dialogue {s}:", .{name}));
+    var prev: usize = 0;
+    while (records.next()) |record| {
+        if (record.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, record, '\t');
+        if (!std.mem.eql(u8, fields.next() orelse "", "line")) return null;
+        const depth = std.fmt.parseInt(usize, fields.next() orelse "", 10) catch return null;
+        const text = std.mem.trim(u8, fields.rest(), " ");
+        if (text.len == 0) continue;
+        if (std.mem.indexOfAny(u8, text, "\t\r") != null) return null;
+        if (lines.items.len == 1 and depth != 0) return null;
+        if (depth > prev + 1) return null;
+        prev = depth;
+        const pad = try a.alloc(u8, 2 * (depth + 1));
+        @memset(pad, ' ');
+        try lines.append(a, try std.fmt.allocPrint(a, "{s}{s}", .{ pad, text }));
+    }
+    if (lines.items.len == 1) return null;
+    return .{ .name = name, .lines = lines.items };
 }
 
 fn listed(sc: compiler.CastScene, thing: []const u8) bool {
@@ -2094,4 +2256,30 @@ test "a fact's writers are the remember lines whose fixed names match, and engin
     try std.testing.expect(result_has(&p, "\"candidates\":[]"));
     try std.testing.expect(try p.writers("main.bespoke", "CellFlammable", "Floor", "3"));
     try std.testing.expect(result_has(&p, "\"engine\":\"grids\""));
+}
+
+test "the dialogue editor lists a block's lines with depths, writes one, and previews typed lines" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    const before = "scene Quay:\n  cast: Hero, Guide\n\nrelation Paid(who)\n\ndialogue AskGuide:\n    speaker Guide\n    say \"Well?\"\n    choice \"Goodbye.\":\n        say \"Bye.\"\n\non cue TalksTo(Hero, Guide):\n  talk AskGuide\n";
+    try p.add("main.bespoke", before);
+    try std.testing.expect(try p.dialogue("main.bespoke"));
+    const listing = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    listing.deinit();
+    // Four-space indents read as depths 0 and 1.
+    try std.testing.expect(result_has(&p, "\"lines\":[{\"depth\":0,\"text\":\"speaker Guide\"},{\"depth\":0,\"text\":\"say \\\"Well?\\\"\"},{\"depth\":0,\"text\":\"choice \\\"Goodbye.\\\":\"},{\"depth\":1,\"text\":\"say \\\"Bye.\\\"\"}]"));
+
+    const edit = "dialogue\tAskGuide\nline\t0\tspeaker Guide\nline\t0\tsay \"Well, traveller?\"\nline\t0\tchoice \"Pay.\" if not Paid(Hero):\nline\t1\tremember Paid(Hero)\nline\t1\tsay \"Thanks.\"\nline\t0\tchoice \"Goodbye.\":\nline\t1\tsay \"Bye.\"\n";
+    try std.testing.expect(try p.preview_dialogue(edit));
+    try std.testing.expect(result_has(&p, "\"text\":\"Pay.\",\"guard\":\"not Paid(Hero)\""));
+    try std.testing.expect(try p.write_dialogue("main.bespoke", edit));
+    try std.testing.expectEqualStrings("scene Quay:\n  cast: Hero, Guide\n\nrelation Paid(who)\n\ndialogue AskGuide:\n  speaker Guide\n  say \"Well, traveller?\"\n  choice \"Pay.\" if not Paid(Hero):\n    remember Paid(Hero)\n    say \"Thanks.\"\n  choice \"Goodbye.\":\n    say \"Bye.\"\n\non cue TalksTo(Hero, Guide):\n  talk AskGuide\n", p.find("main.bespoke").?);
+
+    // A typo previews as an error, and is refused by the compiler on write; a jump of two
+    // levels is refused before either.
+    try std.testing.expect(!try p.preview_dialogue("dialogue\tAskGuide\nline\t0\tspeaker Guide\nline\t0\twalk Hero to Quay\n"));
+    try std.testing.expect(result_has(&p, "belongs in a handler"));
+    try std.testing.expect(!try p.write_dialogue("main.bespoke", "dialogue\tAskGuide\nline\t0\tspeaker Guide\nline\t2\tsay \"x\"\n"));
+    try std.testing.expect(!try p.write_dialogue("main.bespoke", "dialogue\tFarewell\nline\t0\tspeaker Nobody\nline\t0\ttalk Nowhere\n"));
+    try std.testing.expect(result_has(&p, "no dialogue 'Nowhere'"));
 }

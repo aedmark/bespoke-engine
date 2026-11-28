@@ -6,6 +6,15 @@ scene Courtyard:
   props: Fountain, FruitStall
   marks: Gate, FountainMark, StallMark
 
+room Courtyard:
+  mark Gate at 43 72
+  mark FountainMark at 107 49
+  mark StallMark at 249 94
+  prop Fountain at 105 40
+  prop FruitStall at 250 83
+  walkway FountainMark to StallMark
+  walkway Gate to FountainMark
+
 routine Patrol(Guard):
   loop:
     walk Guard to FountainMark

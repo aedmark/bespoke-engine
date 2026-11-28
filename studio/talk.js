@@ -2,8 +2,14 @@
 // conversation with choices (a cue handler, a routine, or the top level) and draws one as a
 // tree, top-down: a box holds what is said, and an arrow per choice leads to what follows, with
 // the choice's text and guard on it. A guard whose relation nothing in the script writes is
-// marked (the compiler warns about the same choices). It is read-only: a click on a box or an
-// arrow opens the script view at that line. Writing dialogue is P47-14.
+// marked (the compiler warns about the same choices). A click on a box or an arrow opens the
+// script view at that line.
+//
+// A `dialogue` block (P47-15, D-206) can be edited (P47-14): a form of its lines, each with
+// its nesting depth and indent and outdent buttons, beside the map, which redraws from what is
+// typed through the Studio module's preview. Apply rewrites the block whole, checked with the
+// compiler before it is kept; New dialogue starts from a template. Handlers and routines stay
+// read-only (D-202).
 'use strict';
 
 // eslint-disable-next-line no-unused-vars
@@ -13,7 +19,7 @@ function createTalk(desk, screen, hooks) {
   const PAD = 6;
   const GAP_X = 24;
   const GAP_Y = 54;
-  const T = { listing: null, index: 0, zoom: 1 };
+  const T = { listing: null, index: 0, zoom: 1, edit: null, preview: null, error: '', commentsOk: false };
   let win = null;
   let regions = [];
 
@@ -87,7 +93,8 @@ function createTalk(desk, screen, hooks) {
   }
 
   function draw(canvas, conv) {
-    const root = treeOf(conv.nodes);
+    const nodes = T.edit ? ((T.preview && T.preview.nodes) || []) : conv.nodes;
+    const root = treeOf(nodes);
     const size = layout(root);
     const z = T.zoom;
     canvas.width = Math.ceil((size.width + 8) * z);
@@ -153,13 +160,14 @@ function createTalk(desk, screen, hooks) {
       const a = screen.area.getBoundingClientRect();
       win = desk.window(screen, {
         id: 'dialogue', title: 'Dialogue', x: Math.max(0, Math.min(100, a.width - 680)), y: 28, w: Math.min(680, a.width), h: Math.min(560, a.height - 28), minW: 220, minH: 200,
-        onMessage: (msg) => {
-          if (msg.kind === 'close') { win.close(); win = null; return; }
+        onMessage: async (msg) => {
+          if (msg.kind === 'close') { win.close(); win = null; T.edit = null; return; }
           if (msg.kind === 'resize') { render(); return; }
           if (msg.kind !== 'gadget') return;
           if (msg.id.startsWith('conv:')) { T.index = Number(msg.id.slice(5)); render(); return; }
           if (msg.id === 'zoom-in') { T.zoom = Math.min(3, T.zoom + 0.5); render(); return; }
-          if (msg.id === 'zoom-out') { T.zoom = Math.max(0.5, T.zoom - 0.5); render(); }
+          if (msg.id === 'zoom-out') { T.zoom = Math.max(0.5, T.zoom - 0.5); render(); return; }
+          await editMessage(msg.id);
         },
       });
     }
@@ -174,7 +182,12 @@ function createTalk(desk, screen, hooks) {
     const out = [];
     const L = T.listing;
     if (!L) { out.push(line('No listing: the main script did not check.')); win.body.replaceChildren(...out); return; }
-    if (!L.conversations.length) { out.push(line(fit('This script has no choices.', cols()))); win.body.replaceChildren(...out); return; }
+    if (!L.conversations.length && !T.edit) {
+      out.push(line(fit('This script has no choices or dialogues.', cols())));
+      out.push(editRow());
+      win.body.replaceChildren(...out);
+      return;
+    }
     const list = document.createElement('div');
     list.className = 'list cast-list';
     L.conversations.forEach((c, i) => {
@@ -192,7 +205,7 @@ function createTalk(desk, screen, hooks) {
     canvas.className = 'talk-canvas';
     canvas.setAttribute('aria-label', `Dialogue map of ${L.conversations[T.index].title}`);
     view.appendChild(canvas);
-    const conv = L.conversations[T.index];
+    const conv = L.conversations[T.index] || { nodes: [], script: '', title: '' };
     draw(canvas, conv);
     canvas.addEventListener('click', (e) => {
       const r = canvas.getBoundingClientRect();
@@ -201,13 +214,173 @@ function createTalk(desk, screen, hooks) {
       const hit = regions.find((g) => x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h);
       if (hit) hooks.openScript(conv.script, hit.line, 0);
     });
-    out.push(list, zoom, view, line(fit('Click a line or a choice to open it in the script.', cols())));
+    out.push(list, editRow(), zoom, view);
+    if (T.edit) out.push(...editForm());
+    else out.push(line(fit('Click a line or a choice to open it in the script.', cols())));
     win.body.replaceChildren(...out);
+  }
+
+  // ------------------------------------------------------------ editing (P47-14, D-206)
+
+  function current() {
+    return T.listing && T.listing.conversations[T.index];
+  }
+
+  function editRow() {
+    const r = document.createElement('div');
+    r.className = 'row';
+    const c = current();
+    if (!T.edit && c && c.dialogue) r.appendChild(desk.button(win, 'dlg-edit', `Edit ${c.dialogue}`));
+    if (!T.edit) r.appendChild(desk.button(win, 'dlg-new', 'New dialogue'));
+    return r;
+  }
+
+  const fields = {};
+  function field(id, value, label) {
+    const el = document.createElement('input');
+    el.className = 'strgad';
+    el.name = id;
+    el.value = value;
+    el.autocomplete = 'off';
+    el.spellcheck = false;
+    el.setAttribute('aria-label', label);
+    el.onkeydown = (e) => e.stopPropagation();
+    el.oninput = () => schedulePreview();
+    fields[id] = el;
+    return el;
+  }
+
+  function editForm() {
+    for (const k of Object.keys(fields)) delete fields[k];
+    const out = [];
+    const nameWrap = document.createElement('label');
+    nameWrap.className = 'line field';
+    nameWrap.appendChild(desk.label('Dialogue'));
+    nameWrap.appendChild(field('dlg-name', T.edit.name, 'Dialogue name'));
+    out.push(nameWrap);
+    const scroll = document.createElement('div');
+    scroll.className = 'cast-scroll';
+    T.edit.lines.forEach((l, i) => {
+      const r = document.createElement('div');
+      r.className = 'row field-row';
+      const pad = document.createElement('span');
+      pad.className = 'dlg-indent';
+      pad.style.setProperty('--depth', l.depth);
+      r.append(desk.button(win, `dlg-out:${i}`, '<'), desk.button(win, `dlg-in:${i}`, '>'), pad, field(`dlg-l${i}`, l.text, `Line ${i + 1}`), desk.button(win, `dlg-del:${i}`, 'Remove'));
+      scroll.appendChild(r);
+    });
+    out.push(scroll);
+    const r = document.createElement('div');
+    r.className = 'row';
+    r.append(desk.button(win, 'dlg-add', 'Add line'), desk.button(win, 'dlg-apply', 'Apply'), desk.button(win, 'dlg-cancel', 'Close editor'));
+    out.push(r);
+    if (T.error) out.push(line(fit(T.error, cols()), 'err'));
+    return out;
+  }
+
+  function readLines() {
+    if (!T.edit) return [];
+    return T.edit.lines.map((l, i) => ({ depth: l.depth, text: fields[`dlg-l${i}`] ? fields[`dlg-l${i}`].value : l.text }));
+  }
+
+  function records() {
+    const name = fields['dlg-name'] ? fields['dlg-name'].value.trim() : T.edit.name;
+    return [`dialogue\t${name}`, ...readLines().map((l) => `line\t${l.depth}\t${l.text}`)].join('\n');
+  }
+
+  let previewTimer = 0;
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => { runPreview(); redrawMap(); }, 150);
+  }
+
+  function runPreview() {
+    if (!T.edit) return;
+    const r = hooks.previewDialogue(records());
+    T.preview = r && r.nodes ? r : T.preview;
+    T.error = r && r.error ? `Line ${Math.max(1, r.line - 1)}: ${r.error}` : (r && r.refused ? r.refused : '');
+  }
+
+  // Redraws only the map and the error line, so the field being typed in keeps its focus.
+  function redrawMap() {
+    const canvas = win && win.body.querySelector('canvas');
+    if (!canvas) return;
+    draw(canvas, current() || { nodes: [] });
+    const err = win.body.querySelector('.dlg-error');
+    if (err) err.remove();
+    if (T.error) {
+      const e = line(fit(T.error, cols()), 'err dlg-error');
+      win.body.appendChild(e);
+    }
+  }
+
+  function startEdit(name, lines) {
+    T.edit = { name, lines: lines.map((l) => ({ ...l })) };
+    T.error = '';
+    T.commentsOk = false;
+    runPreview();
+    render();
+  }
+
+  async function editMessage(id) {
+    if (id === 'dlg-edit') {
+      const c = current();
+      if (c && c.dialogue) startEdit(c.dialogue, c.lines || []);
+      return;
+    }
+    if (id === 'dlg-new') {
+      const speaker = hooks.firstCast() || 'Someone';
+      startEdit('NewDialogue', [
+        { depth: 0, text: `speaker ${speaker}` },
+        { depth: 0, text: 'say "Hello."' },
+        { depth: 0, text: 'choice "Goodbye.":' },
+        { depth: 1, text: 'say "Farewell."' },
+      ]);
+      return;
+    }
+    if (!T.edit) return;
+    T.edit.lines = readLines();
+    T.edit.name = fields['dlg-name'] ? fields['dlg-name'].value.trim() : T.edit.name;
+    const at = (prefix) => Number(id.slice(prefix.length));
+    if (id === 'dlg-cancel') { T.edit = null; T.preview = null; T.error = ''; render(); return; }
+    if (id === 'dlg-add') { T.edit.lines.push({ depth: T.edit.lines.length ? T.edit.lines[T.edit.lines.length - 1].depth : 0, text: '' }); render(); const el = fields[`dlg-l${T.edit.lines.length - 1}`]; if (el) el.focus(); return; }
+    if (id.startsWith('dlg-del:')) { T.edit.lines.splice(at('dlg-del:'), 1); runPreview(); render(); return; }
+    if (id.startsWith('dlg-in:')) { const i = at('dlg-in:'); const max = i === 0 ? 0 : T.edit.lines[i - 1].depth + 1; T.edit.lines[i].depth = Math.min(max, T.edit.lines[i].depth + 1); runPreview(); render(); return; }
+    if (id.startsWith('dlg-out:')) { const i = at('dlg-out:'); T.edit.lines[i].depth = Math.max(0, T.edit.lines[i].depth - 1); runPreview(); render(); return; }
+    if (id === 'dlg-apply') {
+      const c = T.listing && T.listing.conversations.find((x) => x.dialogue === T.edit.name);
+      if (c && c.block && c.block.comments && !T.commentsOk) {
+        const pick = await desk.requester(win, {
+          title: 'Dialogue', lines: [`The block for ${T.edit.name} has comments.`, 'Apply rewrites the block whole, so they will be lost.'],
+          buttons: [{ id: 'rewrite', label: 'Rewrite' }, { id: 'cancel', label: 'Cancel' }],
+        });
+        if (pick !== 'rewrite') return;
+        T.commentsOk = true;
+      }
+      const r = hooks.writeDialogue(records());
+      if (!r) return;
+      if (!r.written) {
+        T.error = r.refused || (r.result && r.result.message) || 'the edit was refused';
+        render();
+        if (r.refused) await desk.requester(win, { title: 'Dialogue', tone: 'fault', lines: ['Nothing was written:', r.refused] });
+        else await hooks.showResult(r.result);
+        return;
+      }
+      const name = T.edit.name;
+      T.listing = hooks.listDialogue();
+      const i = T.listing.conversations.findIndex((x) => x.dialogue === name);
+      if (i >= 0) T.index = i;
+      const c2 = current();
+      startEdit(name, (c2 && c2.lines) || T.edit.lines);
+    }
   }
 
   function reset() {
     T.listing = null;
     T.index = 0;
+    T.edit = null;
+    T.preview = null;
+    T.error = '';
     if (win) render();
   }
 
@@ -222,8 +395,9 @@ function createTalk(desk, screen, hooks) {
     open,
     reset,
     relist,
-    state: () => ({ open: Boolean(win), index: T.index, conversations: T.listing ? T.listing.conversations : [], regions: regions.map((g) => ({ what: g.what, line: g.line, x: g.x, y: g.y, w: g.w, h: g.h })) }),
+    state: () => ({ open: Boolean(win), index: T.index, conversations: T.listing ? T.listing.conversations : [], regions: regions.map((g) => ({ what: g.what, line: g.line, x: g.x, y: g.y, w: g.w, h: g.h })), edit: T.edit && { name: T.edit.name, lines: readLines() }, preview: T.preview, error: T.error }),
     gadget: (id) => { if (win) win.port.post({ kind: 'gadget', id }); return Boolean(win); },
+    field: (id, value) => { const el = fields[id]; if (!el) return false; el.value = value; el.dispatchEvent(new Event('input')); return true; },
     // For tests: a click on a region of the drawn map, in map units.
     clickRegion: (what) => {
       const g = regions.find((x) => x.what === what);

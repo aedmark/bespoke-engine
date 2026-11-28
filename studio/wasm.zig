@@ -197,6 +197,20 @@ export fn studio_writers(main_ptr: [*]const u8, main_len: usize, fact_ptr: [*]co
     return if (ok) 1 else 0;
 }
 
+/// Writes a dialogue block from tab-separated records and checks the project (P47-14, D-206).
+/// 1 written, 0 refused (JSON says why), -1 out of memory.
+export fn studio_write_dialogue(main_ptr: [*]const u8, main_len: usize, edit_ptr: [*]const u8, edit_len: usize) i32 {
+    const ok = project.write_dialogue(main_ptr[0..main_len], edit_ptr[0..edit_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+/// The tree a dialogue's typed lines would make, as JSON in the result buffer. 1 read, 0 the
+/// lines do not read (an error and its line instead), -1 out of memory.
+export fn studio_preview_dialogue(edit_ptr: [*]const u8, edit_len: usize) i32 {
+    const ok = project.preview_dialogue(edit_ptr[0..edit_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
 /// Copies the table's bytes for `path` into the blob, so the page reads back a script the
 /// module edited. 1 found, 0 not in the table.
 export fn studio_file(path_ptr: [*]const u8, path_len: usize) i32 {
