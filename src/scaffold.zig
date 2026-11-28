@@ -202,7 +202,7 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     try testing.expect(std.mem.indexOf(u8, zon, ".name = .tide,") != null);
     const workflow = try tmp.dir.readFileAlloc(testing.io, "tide/.github/workflows/build.yml", testing.allocator, .limited(1 << 16));
     defer testing.allocator.free(workflow);
-    try testing.expect(std.mem.indexOf(u8, workflow, "\n  BESPOKE_ENGINE_REF: refs/tags/v1.0.0\n") != null);
+    try testing.expect(std.mem.indexOf(u8, workflow, "\n  BESPOKE_ENGINE_REF: refs/tags/v1.2.0\n") != null);
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, workflow, "ref: ${{ env.BESPOKE_ENGINE_REF }}"));
     // Both jobs install Zig from ziglang.org against a pinned checksum; the setup action
     // could not fetch 0.17.1, so a generated project's CI failed before building (P42-06).

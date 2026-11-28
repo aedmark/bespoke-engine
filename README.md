@@ -75,13 +75,13 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 | Emergent society | Autonomous needs-driven agents, witnesses, rumor spread, and justice cascades over the fact store, configured per game: any roster, needs, roles, and places (`src/society.zig`) |
 | Time | Rewind and timeline scrubbing; temporary branch worlds on a countdown (`TemporalHypervisor`) |
 | Peripherals | SDL2 window with verb bar and HUD, procedural chiptune audio, CRC32-checked `.sav` slots, `wasm32-freestanding` target |
-| Studio | `site/studio.html`, one browser page on `main` (not yet released): start a project from a starter script, edit script text, paint PNG art, lay out rooms and grids, edit cast, values, dilemmas, and dialogue, play the game beside the editors with its live facts, and export it as one HTML page |
+| Studio | `site/studio.html`, one browser page, new in 1.2.0 and on the published site to try: start a project from a starter script, edit script text, paint PNG art, lay out rooms and grids, edit cast, values, dilemmas, and dialogue, play the game beside the editors with its live facts, and export it as one HTML page |
 
 ---
 
 ## Quick Start
 
-The current release is [1.1.0](https://github.com/aedmark/bespoke-engine/releases/tag/v1.1.0), with a static Linux x86_64 CLI, an SDL2 desktop build, and the stock browser runtime. To build from source on Linux, use Zig 0.17.1 and the SDL2 development libraries.
+The current release is [1.2.0](https://github.com/aedmark/bespoke-engine/releases/tag/v1.2.0), with a static Linux x86_64 CLI, an SDL2 desktop build, and the stock browser runtime. To build from source on Linux, use Zig 0.17.1 and the SDL2 development libraries.
 
 ```bash
 # Engine and proof tests, and the WebAssembly builds
@@ -160,7 +160,7 @@ zig build test-proofs                     # every proof's tests
 
 - A one-shot `when` rule's body cannot use its trigger's variables (`D-161`); `when each` (`D-186`) and `on cue` handler bodies can.
 - A society has one enforcer.
-- BeSpoke Studio is checked in headless Chrome only; dragging and painting by hand, folder write prompts, file pickers, and downloads have not been hand-tested, and it is not yet on the published site (`P47-01` to `P47-15`).
+- BeSpoke Studio (new in 1.2.0) passed the maintainer's hand test well enough to release on 2026-11-28; its automated checks drive it in headless Chrome, and the steps for a fuller hand test are in `docs/runbooks/studio-hand-test.md`.
 - All sixteen windowed proofs and both headless proofs passed the 1.0.0 [release hand-test](docs/runbooks/release-hand-test.md) on Linux (2026-11-26, `P48-05`); The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser. A project made by `bespoke init` builds, tests, and runs on Linux and macOS in its own GitHub CI; Windows is not a release target until a Windows contributor maintains it (`D-143`). The uploaded showcase site is checked by hand by the maintainer (`D-074`).
 - The showcase homepage features The Harbour, and all nineteen proofs have their own standalone pages in `site/`. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (`D-047`, `D-122`). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 

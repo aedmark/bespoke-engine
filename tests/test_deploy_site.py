@@ -65,7 +65,7 @@ class ExportTests(unittest.TestCase):
 
     def test_the_repository_page_is_current_and_exports(self):
         # Guards the real page: export refuses a stale one, as build_site.py --check does.
-        if not all((ROOT / "zig-out" / artifact).exists() for artifact in ("bin/bespoke-proofs.wasm", "harbour/index.html", "sunken-vault/index.html")):
+        if not all((ROOT / "zig-out" / artifact).exists() for artifact in ("bin/bespoke-proofs.wasm", "harbour/index.html", "sunken-vault/index.html", "bin/bespoke-studio.wasm", "bin/bespoke-play.wasm")):
             self.skipTest("run `zig build wasm-proofs harbour` and `tools/build_sunken_vault.py` first")
         with tempfile.TemporaryDirectory() as tmp:
             written = deploy.export(Path(tmp), None)
@@ -76,6 +76,7 @@ class ExportTests(unittest.TestCase):
                 "grog.html", "barbs.html", "saltmarket.html", "weathercock.html", "bell-tower.html",
                 "fire-escape.html", "observatory.html", "valerius.html", "lamplighter.html",
                 "long-gallery.html", "word-foundry.html", "cinder-table.html", "tide-beacon.html",
+                "studio.html",
             ],
             [p.name for p in written],
         )

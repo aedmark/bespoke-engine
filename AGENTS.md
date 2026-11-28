@@ -56,7 +56,7 @@ Do not manufacture ceremony: typo-only or mechanical changes do not need a decis
 - Default branch: `main`.
 - Working branch pattern: `feature/<topic>`.
 - Commit format: Imperative present tense, referencing roadmap IDs where applicable.
-- Release scheme: Semantic versioning (current release: `1.1.0`).
+- Release scheme: Semantic versioning (current release: `1.2.0`).
 
 Never force-push, rewrite shared history, or delete production data without explicit permission.
 
@@ -116,7 +116,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `site/index.html`, `site/sunken-vault.html` | Standalone public showcase website and companion Sunken Vault page; its gallery links one proof page per card |
 | `site/tavern.html`, `site/pips.html`, `site/beard.html`, `site/village.html`, `site/donkey.html`, `site/tides.html`, `site/grog.html`, `site/barbs.html`, `site/saltmarket.html`, `site/weathercock.html`, `site/bell-tower.html`, `site/fire-escape.html`, `site/observatory.html`, `site/valerius.html`, `site/lamplighter.html`, `site/long-gallery.html`, `site/word-foundry.html`, `site/cinder-table.html`, `site/tide-beacon.html` | Standalone pages to share, one deck each (The Tavern Heist, The Pip-Spitting Green, The Borrowed Beard, The Living Village, The Donkey of Lamp Point, The Well of Three Tides, Caustic Grog, Brackwater Barbs, The Saltmarket, The Copper Weathercock, The Bell Tower, The Castle Fire Escape, The Larkspur Observatory, Valerius and the Bread, The Lamplighter's Round, The Long Gallery, The Word Foundry, The Cinder Table, The Tide Beacon), built by `tools/build_site.py` with the shared wrapper `tools/proof_page.js` (D-086, D-094, D-122) |
 | `studio/` | BeSpoke Studio sources (P47-01, D-192): the window layer (`windows.js`), the app (`studio.js`), the play window (`play.js`), the pixel editor (`paint.js`, P47-02, D-196), the room editor (`room.js`, P47-03, D-200), the cast editor (`cast.js`, P47-05, D-202), the dilemma editor (`dilemma.js`, P47-13, D-203), the dialogue map and editor (`talk.js`, P47-04, P47-14, D-204, D-206), the page shell, the wasm root that checks and builds scripts with the supported compiler and reads and writes PNG sheets (`wasm.zig`, `project.zig`, `png_write.zig`), and the play module's root (`play.zig`, P47-06, D-195) |
-| `site/studio.html` | The built Studio page, from `tools/build_studio.py`; not linked from the showcase and not exported by `tools/deploy_site.py` |
+| `site/studio.html` | The built Studio page, from `tools/build_studio.py`; linked from the showcase as a page to try and exported by `tools/deploy_site.py` (D-212) |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
 | `tools/check_third_party.py` | Third-party name lint with `tools/third_party_terms.json` and a shrink-only baseline (P35-01, D-075) |

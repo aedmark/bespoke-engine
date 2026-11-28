@@ -15,3 +15,6 @@ saves/
 *.actual.bmp
 
 dist/
+
+# The maintainer's own scratch projects.
+tools/scratch/

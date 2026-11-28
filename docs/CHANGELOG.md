@@ -6,7 +6,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## 1.2.0 - 2026-11-28
 
-Prepared on 2026-11-28; the tag follows the Studio and release hand tests, and this date moves to the tag's if they differ.
+BeSpoke Studio is on the published site as a page to try, and projects made by `bespoke init` now build in CI against `v1.2.0` (`D-212`).
 
 Upgrading from 1.1:
 - Two rules changed, and a script that relied on the old ones behaves differently. A script's own `transition to scene` now places a player who stands in another room on the new room's first mark (`D-208`). A prop that any character carries is no longer named by typed commands in the room its scene listed (`D-209`). No repository script or recorded play-through changed.

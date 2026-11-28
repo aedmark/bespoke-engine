@@ -102,21 +102,26 @@ def font_table(wasm_path: Path) -> dict:
     return json.loads(out.stdout)
 
 
+def build_page(wasm_path: Path = WASM_ARTIFACT, play_path: Path = PLAY_ARTIFACT) -> str:
+    """The Studio page a fresh build writes; `tools/deploy_site.py` checks the export against it."""
+    try:
+        wasm = wasm_path.read_bytes()
+    except OSError as exc:
+        raise SystemExit(f"Studio module not found at {wasm_path}; run `zig build studio` first") from exc
+    try:
+        play = play_path.read_bytes()
+    except OSError as exc:
+        raise SystemExit(f"play module not found at {play_path}; run `zig build studio` first") from exc
+    return render(wasm, play, font_table(wasm_path))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="fail when site/studio.html differs from a fresh build")
     parser.add_argument("--wasm", type=Path, default=WASM_ARTIFACT, help="bespoke-studio.wasm to embed")
     parser.add_argument("--play", type=Path, default=PLAY_ARTIFACT, help="bespoke-play.wasm to embed (P47-06, D-195)")
     args = parser.parse_args()
-    try:
-        wasm = args.wasm.read_bytes()
-    except OSError as exc:
-        raise SystemExit(f"Studio module not found at {args.wasm}; run `zig build studio` first") from exc
-    try:
-        play = args.play.read_bytes()
-    except OSError as exc:
-        raise SystemExit(f"play module not found at {args.play}; run `zig build studio` first") from exc
-    page = render(wasm, play, font_table(args.wasm))
+    page = build_page(args.wasm, args.play)
     if args.check:
         current = STUDIO_PATH.read_text(encoding="utf-8") if STUDIO_PATH.exists() else None
         if current != page:
@@ -125,7 +130,7 @@ def main() -> int:
         print(f"{STUDIO_PATH.relative_to(ROOT)} is current ({len(page.encode('utf-8'))} bytes)")
         return 0
     STUDIO_PATH.write_text(page, encoding="utf-8")
-    print(f"wrote {STUDIO_PATH.relative_to(ROOT)} ({len(page.encode('utf-8'))} bytes, wasm {len(wasm)} + {len(play)} bytes)")
+    print(f"wrote {STUDIO_PATH.relative_to(ROOT)} ({len(page.encode('utf-8'))} bytes, wasm {args.wasm.stat().st_size} + {args.play.stat().st_size} bytes)")
     return 0
 
 

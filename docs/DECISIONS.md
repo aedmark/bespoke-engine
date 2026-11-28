@@ -2704,6 +2704,18 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** writing the full `bespoke init` tree, rejected because the page cannot know where the engine is and the build files would need a pinned release; a Studio-drawn text editor, rejected as much more work for the same edits; keeping text that does not compile, rejected so the other editors always read a project that checks.
 
+## D-212 BeSpoke 1.2.0 Publishes the Studio and Pins New Projects to It (2026-11-28, status: accepted; supersedes D-192's off-the-showcase rule)
+
+**Context.** D-192 kept the Studio off the showcase and out of the site export until it was ready. The maintainer's hand test of 1.2.0 passed well enough to release on 2026-11-28. New projects from `bespoke init` pinned their CI to `refs/tags/v1.0.0`, though the template has since needed `--deps` (D-194) and the text template's exports (D-191), which 1.0.0 lacks. The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. The Studio goes out with 1.2.0 as a page to try: the showcase links it from its opening buttons and a short section ("New in 1.2: try it out"), and `tools/deploy_site.py export` writes `studio.html` beside the other pages, checked against a fresh build as they are.
+2. `bespoke init`'s workflow pins `BESPOKE_ENGINE_REF` to `refs/tags/v1.2.0`, the release this template ships in.
+
+**Consequences.** The published site carries the Studio (about 1.9 MB, inside the 2 MiB page budget). A project made by the 1.2.0 CLI builds in CI against the same engine; earlier projects keep their own pins until their authors move them.
+
+**Alternatives:** keeping the Studio unlinked for another release, not chosen after the hand test; pinning new projects to `main`, rejected because a generated project should build the same way tomorrow.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

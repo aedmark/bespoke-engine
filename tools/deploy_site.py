@@ -83,6 +83,14 @@ def load_build_site():
     return module
 
 
+def load_build_studio():
+    spec = importlib.util.spec_from_file_location("build_studio", ROOT / "tools" / "build_studio.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def require_current_page(page: str) -> None:
     """The exported page must be what build_site.py would write from the current module."""
     build_site = load_build_site()
@@ -168,6 +176,9 @@ def export(out_dir: Path, site_url: str | None, page_path: Path = SITE_HTML, che
             (build.SUNKEN_VAULT_PATH, lambda _: build.load_sunken_vault()),
         ]
         inputs.extend((p, build.render_proof_page) for p in build.PROOF_PAGE_PATHS)
+        # The Studio goes out as a page to try (D-212), checked against a fresh build like the rest.
+        studio = load_build_studio()
+        inputs.append((studio.STUDIO_PATH, lambda _: studio.build_page()))
         for path, render in inputs:
             try:
                 text = path.read_text(encoding="utf-8")

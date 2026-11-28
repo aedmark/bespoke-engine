@@ -214,7 +214,7 @@
 <div class="dos-titlebar" aria-hidden="true"><span class="dos-close">[&#9632;]</span><span class="dos-title">&#9552; STATE.TXT &#9552;</span><span class="dos-zoom">[&#8593;]</span></div>
 <div class="hero">
 
-<p class="eyebrow">BeSpoke Engine 1.2.0, prepared on <code>main</code> and tagged after its hand tests &middot; 28 November 2026</p>
+<p class="eyebrow">BeSpoke Engine 1.2.0 &middot; 28 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
@@ -477,7 +477,7 @@ routine Inspector(Moss):
   <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
   <li><strong>Pre-1.0 files are retired.</strong> BeSpoke 1.1 reads <code>BSP1</code> format-1 packages (with optional <code>CYCL</code> sections skipped cleanly by 1.0 readers) and <code>BSV1</code> version-1 saves; packages and saves from before 1.0 must be rebuilt from their scripts.</li>
   <li><strong>Small writing gaps:</strong> a one-shot <code>when</code> rule body cannot read its trigger's variables yet (use <code>when each</code> or <code>on cue</code>); a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options; and the built-in 5x7 canvas font covers ASCII, Latin-1 Supplement, and common Latin Extended-A letters and punctuation while unsupported scripts render as <code>?</code>.</li>
-  <li><strong>The Studio is new.</strong> It is on <code>main</code>, not yet in a release or on the published site. Its automated checks drive it in headless Chrome; dragging and painting by hand, real folder write prompts, file pickers, and downloads are still to be tried by hand. It edits routines and handlers as script text only, and a block it rewrites loses the comments inside it (it asks first).</li>
+  <li><strong>The Studio is new.</strong> It shipped in 1.2.0 as a page to try. Its automated checks drive it in headless Chrome, and the maintainer's hand test passed well enough to release; a fuller pass is in its runbook. It edits routines and handlers as script text only, and a block it rewrites loses the comments inside it (it asks first).</li>
   <li><strong>Deliberately out of scope:</strong> 3D, physics, and networked multiplayer. BeSpoke is for narrative and systemic games.</li>
 </ul>
 </div>
@@ -485,7 +485,7 @@ routine Inspector(Moss):
 <h2 id="next">What is next</h2>
 <ul>
   <li><strong>Hand-testing the Studio,</strong> then releasing it.</li>
-  <li><strong>Tagging BeSpoke 1.2.0,</strong> prepared with the Studio and this round of parser-adventure work (things dropped in one room and found in another, several phrases on one command line, a player who goes along when the script changes room), once its hand tests pass.</li>
+  <li><strong>Feedback on the Studio,</strong> now that anyone can try it, and the fuller hand-test pass in its runbook.</li>
   <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>
 
@@ -499,7 +499,7 @@ routine Inspector(Moss):
 </ol>
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
-<footer>BeSpoke Engine 1.2.0 (prepared; 1.1.0 is the latest tag) &middot; status as of 28 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<footer>BeSpoke Engine 1.2.0 &middot; status as of 28 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 <div class="dos-status" aria-hidden="true"><span><b>&#9658;</b> Ready</span><span><b>Mode</b> Read-only</span></div>
 </div>
 </main>
