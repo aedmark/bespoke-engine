@@ -676,7 +676,6 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
     }
     if (std.mem.eql(u8, name, "three_tides")) return three_tides.place_fenn(world, spatial);
     if (std.mem.eql(u8, name, "lamplighter")) return lamplighter.configure(world, spatial, false);
-    if (std.mem.eql(u8, name, "tide_beacon")) return tide_beacon.configure(world, spatial, false);
 }
 
 fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
@@ -960,7 +959,7 @@ fn record_tide_beacon(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void
     defer compiled.deinit();
     rec.set_art(&compiled.art);
     defer rec.set_art(null);
-    try tide_beacon.configure(&world, &spatial, false);
+    try bespoke.host.place_cast(&spatial, &compiled);
     var vm = bespoke.VM.init(rec.allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;

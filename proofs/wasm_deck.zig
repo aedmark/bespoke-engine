@@ -259,7 +259,6 @@ pub const decks = [_]wasm.Deck{
         .intro = tide_beacon.INTRO ++ " [S] plays the next step.",
         .theme = &tide_beacon.theme,
         .background = .{ .r = 11, .g = 14, .b = 30 },
-        .setup = tide_beacon_setup,
         .catalyst = solver(&TIDE_BEACON_SOLUTION),
     }),
 };
@@ -3081,11 +3080,6 @@ test "P44-05: Cinder Table plays all 12 cards across 4 rounds in the browser" {
 
 const TIDE_BEACON_DECK: u8 = 18;
 
-fn tide_beacon_setup(rt: *WasmRuntime) anyerror!void {
-    try tide_beacon.configure(&rt.world, &rt.spatial, true);
-    try rt.vm.transition_to_scene(try entity(rt, tide_beacon.SCENE));
-    rt.bind();
-}
 
 const TIDE_BEACON_SOLUTION = [_]Beat{
     .{ .note = "The waterfall churns down the basalt cliff.", .actions = &.{

@@ -17,41 +17,6 @@ pub const SCRIPT = @embedFile("art/tide_beacon/tide_beacon.bespoke");
 
 pub const SCENE = "Moonlit Cove";
 
-const MARKS = [_]struct { mark: []const u8, x: i32 }{
-    .{ .mark = "Pier", .x = -6 },
-    .{ .mark = "Ledge", .x = 34 },
-};
-const ROW: i32 = 4;
-
-const PROPS = [_]struct { entity: []const u8, name: []const u8, x: i32, text: []const u8 }{
-    .{ .entity = "Brazier", .name = "Brazier", .x = 4, .text = "An iron signal brazier on the pier." },
-    .{ .entity = "TidePool", .name = "Tide Pool", .x = 20, .text = "A moonlit tide pool between the pier and the cliff." },
-    .{ .entity = "Waterfall", .name = "Waterfall", .x = 42, .text = "Cold cliffwater pouring down the basalt rock." },
-};
-
-/// Places the pier and rocky ledge, props, and Keeper in Moonlit Cove.
-pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem, registered: bool) !void {
-    const scene = world.lookup_entity(SCENE) orelse return error.SceneMissing;
-    spatial.graph.edges.clearRetainingCapacity();
-    var prev: ?bespoke.WaypointId = null;
-    for (MARKS) |m| {
-        const wp = spatial.graph.find_waypoint_in_room(scene, m.mark) orelse return error.MarkMissing;
-        host.place_waypoint(spatial, wp, m.x, ROW);
-        if (prev) |p| try spatial.graph.connect(p, wp, null);
-        prev = wp;
-    }
-    spatial.clear_hotspots();
-    for (PROPS) |p| {
-        const id = world.lookup_entity(p.entity) orelse return error.PropMissing;
-        try spatial.add_hotspot(id, scene, .{ .x = p.x, .y = ROW }, 6, p.name, p.text);
-    }
-    const keeper = world.lookup_entity("CoveKeeper") orelse return error.CastMissing;
-    const pier = spatial.graph.find_waypoint_in_room(scene, "Pier") orelse return error.MarkMissing;
-    if (registered) {
-        _ = try spatial.transition_actor(keeper, scene, pier);
-    } else try spatial.register_entity(keeper, pier, 6);
-}
-
 fn footer(frame: *const bespoke.RenderFrame) ?r.FooterHint {
     _ = frame;
     return .{ .text = "LOOK at Waterfall, Tide Pool, or Brazier | USE Brazier to stoke | [Space] pauses ticks while cycles animate" };
@@ -77,16 +42,12 @@ const Stage = struct {
         var stream: std.Io.Reader = .fixed(PACKAGE);
         self.compiled = try bespoke.load_package(allocator, &stream, &self.world, &self.spatial);
         errdefer self.compiled.deinit();
-        try configure(&self.world, &self.spatial, false);
-        self.vm = bespoke.VM.init(allocator, &self.world, &self.compiled.chunk);
+        // The script's room block places the cove (P50-22); the run starts as every host's does,
+        // so the Studio's example and this proof start the same way.
+        self.vm = try host.init_vm(allocator, &self.world, &self.spatial, &self.compiled);
         errdefer self.vm.deinit();
-        self.vm.spatial = &self.spatial;
-        self.keeper = self.world.lookup_entity("CoveKeeper").?;
-        try self.vm.transition_to_scene(self.world.lookup_entity(SCENE).?);
-        try self.vm.load_compiled_rules(&self.compiled);
         try host.initialize_subsystems(&self.world, &self.compiled);
-        try host.run_initial_statements(&self.world, &self.vm, &self.compiled);
-        _ = try host.start_routine(&self.world, &self.spatial, &self.vm, &self.compiled, "Watch", "CoveKeeper", 6);
+        self.keeper = try host.start_script(&self.world, &self.spatial, &self.vm, &self.compiled);
     }
 
     fn deinit(self: *Stage) void {

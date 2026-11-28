@@ -22,7 +22,7 @@
     {"id": "long_gallery", "title": "The Long Gallery", "root": "proofs/scripts", "main": "long_gallery.bespoke", "files": ["long_gallery.bespoke"], "snapshots": "long_gallery", "deck": "THE LONG GALLERY (WATCH ANOTHER ROOM)", "host": ["setup", "on_act", "on_action"]},
     {"id": "word_foundry", "title": "The Word Foundry", "root": "proofs/scripts", "main": "word_foundry.bespoke", "files": ["word_foundry.bespoke"], "deck": "THE WORD FOUNDRY (SPELLBOOK VOCABULARIES)", "host": ["setup", "after_tick", "on_act", "on_action", "on_typed", "on_choice"]},
     {"id": "cinder_table", "title": "The Cinder Table", "root": "proofs/scripts", "main": "cinder_table.bespoke", "files": ["cinder_table.bespoke"], "deck": "THE CINDER TABLE (PRIVATE HANDS & DECISIONS)", "host": ["setup", "after_tick", "on_act", "on_action"]},
-    {"id": "tide_beacon", "title": "The Tide Beacon", "root": "proofs/art/tide_beacon", "main": "tide_beacon.bespoke", "files": ["tide_beacon.bespoke", "*.png"], "deck": "THE TIDE BEACON (COLOUR CYCLING)", "host": ["setup"]},
+    {"id": "tide_beacon", "title": "The Tide Beacon", "root": "proofs/art/tide_beacon", "main": "tide_beacon.bespoke", "files": ["tide_beacon.bespoke", "*.png"], "deck": "THE TIDE BEACON (COLOUR CYCLING)", "host": []},
     {"id": "night_watch", "title": "The Night Watch", "root": "scenarios", "main": "night_watch.bespoke", "files": ["night_watch.bespoke"], "host": []},
     {"id": "guard_patrol", "title": "Guard Patrol", "root": "scenarios", "main": "guard_patrol.bespoke", "files": ["guard_patrol.bespoke"], "host": []}
   ]

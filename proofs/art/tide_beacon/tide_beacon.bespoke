@@ -8,6 +8,16 @@ scene: Moonlit Cove
   marks: Pier, Ledge
   backdrop: CoveBackdrop
 
+# The cove's layout in art pixels (P50-22): the pier and ledge on one walkway, the props between.
+room Moonlit Cove:
+  mark Pier at 42 106
+  mark Ledge at 222 106
+  prop Brazier at 87 106
+  prop TidePool at 159 106
+  prop Waterfall at 258 106
+
+name TidePool: "Tide Pool"
+
 palette:
   ".." transparent
   "s1" 11 14 30
