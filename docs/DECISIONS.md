@@ -2716,6 +2716,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** keeping the Studio unlinked for another release, not chosen after the hand test; pinning new projects to `main`, rejected because a generated project should build the same way tomorrow.
 
+## D-213 Every Demo Opens in the Studio: Scripts Now, Mechanics Later (2026-11-28, status: accepted; P50-01 to P50-03)
+
+**Context.** The maintainer asked that every demo game open and be editable in BeSpoke Studio, PNGs included. Six scenarios and two proofs were already `.bespoke` files and PNGs. The other proofs kept their scripts as Zig strings, drew their art in Zig (`proofs/art.zig`), and seventeen of their browser decks run Zig hooks beyond the script (staging, per-tick rules, verb handling, page buttons, typed commands, choices, doorways), so a proof played from its script alone is a different, sometimes unwinnable, game. The maintainer chose on 2026-11-28.
+
+**Decision.**
+1. **Scripts now.** Every proof's script is a `.bespoke` file under `proofs/scripts/`, which the proof loads with `@embedFile`, so the Studio opens the text the proof runs.
+2. **Built into the page.** Project > Open example lists every demo (`studio/examples.json`), bundled in `site/studio.html` as gzip-compressed JSON by `tools/build_examples.py`; an example lives in the page until Save writes it into an empty folder. A demo whose deck runs Zig hooks opens with a note naming them; the manifest's hook list is tested against `proofs/wasm_deck.zig`.
+3. **Snapshot backdrops.** Each code-drawn scene's backdrop is drawn once, alone, by the render harness and kept as an indexed 320x180 PNG under `proofs/scripts/art/`; the example's script gains its `image ... from` and `backdrop:` lines. The proof keeps drawing in code until its porting item.
+4. **Mechanics later.** Phase 50 holds one item per demo whose Zig code the Studio cannot run (`P50-04` onward), each moving that code into the language or the script.
+
+**Consequences.** The Studio page grows by about 80 KB (to about 1.96 MB of 2 MiB). The render test compares every committed snapshot with a fresh drawing, so a theme change that moves a backdrop fails until `--snapshots` is run. Snapshots sample the 1280x720 frame down to 320x180, so lettering painted into scenery comes out as smudges to paint over. Three proofs the render harness does not draw (The Saltmarket, The Word Foundry, The Cinder Table) have no snapshot yet.
+
+**Alternatives:** offering only the demos that play the same from their script, rejected because the maintainer asked for every demo; porting every mechanic first, deferred to Phase 50's items; example folders in the repository, rejected because the published site could not reach them.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

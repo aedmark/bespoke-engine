@@ -111,7 +111,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `docs/archive/` | Historical material no longer current |
 | `scheme/` | 3x manual schemas and source definitions |
 | `src/` | The engine: spine, VM, compiler, spatial, emergent society, audio, display, persistence, wasm runtime, host kit; exported as the `bespoke` module |
-| `proofs/` | Proofs of concept (vertical slices) built as `bespoke-proofs`; consume the engine only through the `bespoke` module (D-031) |
+| `proofs/` | Proofs of concept (vertical slices) built as `bespoke-proofs`; consume the engine only through the `bespoke` module (D-031). Their scripts are `proofs/scripts/*.bespoke`, with code-drawn backdrops as PNGs under `proofs/scripts/art/` for the Studio's examples (D-213) |
 | `scenarios/` | Sample `.bespoke` DSL scripts run by the stock engine CLI (`bespoke run`) |
 | `site/index.html`, `site/sunken-vault.html` | Standalone public showcase website and companion Sunken Vault page; its gallery links one proof page per card |
 | `site/tavern.html`, `site/pips.html`, `site/beard.html`, `site/village.html`, `site/donkey.html`, `site/tides.html`, `site/grog.html`, `site/barbs.html`, `site/saltmarket.html`, `site/weathercock.html`, `site/bell-tower.html`, `site/fire-escape.html`, `site/observatory.html`, `site/valerius.html`, `site/lamplighter.html`, `site/long-gallery.html`, `site/word-foundry.html`, `site/cinder-table.html`, `site/tide-beacon.html` | Standalone pages to share, one deck each (The Tavern Heist, The Pip-Spitting Green, The Borrowed Beard, The Living Village, The Donkey of Lamp Point, The Well of Three Tides, Caustic Grog, Brackwater Barbs, The Saltmarket, The Copper Weathercock, The Bell Tower, The Castle Fire Escape, The Larkspur Observatory, Valerius and the Bread, The Lamplighter's Round, The Long Gallery, The Word Foundry, The Cinder Table, The Tide Beacon), built by `tools/build_site.py` with the shared wrapper `tools/proof_page.js` (D-086, D-094, D-122) |
@@ -121,6 +121,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
 | `tools/check_third_party.py` | Third-party name lint with `tools/third_party_terms.json` and a shrink-only baseline (P35-01, D-075) |
 | `tools/deploy_site.py` | Showcase export to `dist/site/` for hand upload (D-074) |
+| `tools/build_examples.py`, `studio/examples.json` | The demo games the Studio opens as examples, and the backdrop snapshots (P50-02, P50-03, D-213) |
 
 ## Engineering conventions
 

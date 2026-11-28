@@ -293,7 +293,7 @@
   }
 
   async function finishOpen(meta, acc) {
-    S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: chooseMain(acc.files) };
+    S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: meta.main || chooseMain(acc.files) };
     S.picked = null;
     S.result = null;
     painter.reset();
@@ -574,11 +574,24 @@
   // the author decides. Write permission is asked for only when an edited file needs it. A
   // folder opened read-only (a browser without the file system access API) offers each edited
   // file as a download instead.
-  async function save() {
+  async function save(opts = {}) {
     const win = projectWindow();
     const p = S.project;
     const none = { written: 0, changed: [], downloaded: 0, failed: [] };
     if (!p) { await desk.requester(win, { title: 'Save', lines: ['No project is open.'] }); return none; }
+    // An example lives in the page: its first Save writes every file into an empty folder, or,
+    // where the browser has no folder access, offers every file as a download.
+    if (p.example) {
+      if (opts.handle || window.showDirectoryPicker) {
+        const handle = await pickEmptyFolder('Save', opts.handle);
+        if (!handle) return none;
+        p.handle = handle;
+        p.writable = true;
+        p.name = handle.name;
+      }
+      p.example = null;
+      for (const f of p.files) f.dirty = true;
+    }
     const dirty = dirtyFiles();
     const changed = [];
     if (p.writable) {
@@ -1037,9 +1050,9 @@
     }
     if (!p) {
       out.push(line('No project is open.'));
-      out.push(buttons(win, [['open-folder', 'Open folder'], ['open-files', 'Open files']]));
+      out.push(buttons(win, [['new-project', 'New project'], ['open-example', 'Open example'], ['open-folder', 'Open folder'], ['open-files', 'Open files']]));
     } else {
-      out.push(line(fit(`Folder: ${p.name}${p.writable ? '' : ' (read-only)'}`, n)));
+      out.push(line(fit(p.example ? `Example: ${p.name} (Save puts it in a folder)` : `Folder: ${p.name}${p.writable ? '' : ' (read-only)'}`, n)));
       out.push(line(fit(`Script: ${p.main || 'none'}`, n)));
       const list = document.createElement('div');
       list.className = 'list';
@@ -1347,19 +1360,10 @@
       });
       if (kind !== 'stage' && kind !== 'text') return false;
     }
-    let handle = opts.handle || null;
-    if (!handle && window.showDirectoryPicker && !opts.inPage) {
-      try { handle = await window.showDirectoryPicker({ id: 'bespoke-new', mode: 'readwrite' }); } catch (err) {
-        if (err && err.name === 'AbortError') return false;
-        throw err;
-      }
-    }
-    if (handle) {
-      for await (const entry of handle.values()) {
-        if (entry.name.startsWith('.')) continue;
-        await desk.requester(win, { title: 'New project', lines: [`"${handle.name}" is not empty.`, 'Choose an empty folder, or make a new one in the folder picker.'] });
-        return false;
-      }
+    let handle = null;
+    if (opts.handle || (window.showDirectoryPicker && !opts.inPage)) {
+      handle = await pickEmptyFolder('New project', opts.handle);
+      if (!handle) return false;
     }
     const name = nameFor(handle ? handle.name : 'new_game');
     const bytes = enc.encode(STUDIO_BUILD.starters[kind].split('{{name}}').join(name));
@@ -1369,6 +1373,88 @@
     // The starter is written at once, so the folder is a project from the first moment.
     if (handle) await save();
     return true;
+  }
+
+  // An empty folder to write into, picked with read and write access; null when the author
+  // cancels or picks one that holds anything but hidden entries. `given` skips the picker.
+  async function pickEmptyFolder(title, given) {
+    let handle = given || null;
+    if (!handle) {
+      try { handle = await window.showDirectoryPicker({ id: 'bespoke-new', mode: 'readwrite' }); } catch (err) {
+        if (err && err.name === 'AbortError') return null;
+        throw err;
+      }
+    }
+    for await (const entry of handle.values()) {
+      if (entry.name.startsWith('.')) continue;
+      await desk.requester(projectWindow(), { title, lines: [`"${handle.name}" is not empty.`, 'Choose an empty folder, or make a new one in the folder picker.'] });
+      return null;
+    }
+    return handle;
+  }
+
+  // ------------------------------------------------------------ examples (P50-03, D-213)
+
+  // What a showcase deck's Zig hooks do, for the note an example opens with.
+  const HOST_WORDS = {
+    setup: 'stages its scenes', after_tick: 'runs rules every tick', on_act: 'handles verbs on things',
+    on_action: 'adds page buttons', on_typed: 'reads typed commands', on_choice: 'resolves dialogue choices',
+    exits: 'adds doorways', 'host program': 'runs its own host program',
+  };
+  let examplesCache = null;
+
+  // The demo games built into the page, unpacked once (gzip-compressed JSON).
+  async function examples() {
+    if (examplesCache) return examplesCache;
+    if (!STUDIO_BUILD.examples) return [];
+    const bytes = Uint8Array.from(atob(STUDIO_BUILD.examples), (c) => c.charCodeAt(0));
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    examplesCache = JSON.parse(await new Response(stream).text());
+    return examplesCache;
+  }
+
+  // Opens a demo as a project that lives in the page until Save puts it in a folder.
+  async function openExample(id) {
+    if (!await confirmDiscard()) return false;
+    const ex = (await examples()).find((e) => e.id === id);
+    if (!ex) { await desk.requester(projectWindow(), { title: 'Open example', lines: [`There is no example "${id}".`] }); return false; }
+    const files = ex.files.map((f) => {
+      const bytes = f.text !== undefined ? enc.encode(f.text) : Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0));
+      return { path: f.path, bytes, original: bytes, dirty: false, handle: null, isNew: true };
+    }).sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+    const total = files.reduce((n, f) => n + f.bytes.length, 0);
+    const opened = await finishOpen({ name: ex.title, handle: null, writable: false, example: ex.id, main: ex.main }, { files, skipped: [], total });
+    if (opened && ex.host.length) {
+      const does = ex.host.map((h) => HOST_WORDS[h] || h);
+      await desk.requester(projectWindow(), {
+        title: ex.title,
+        lines: [`In the showcase, this game's Zig code also ${does.join(', ')}.`, 'Here it plays from its script alone, so some of it may not work the same until that moves into the script.'],
+      });
+    }
+    return opened;
+  }
+
+  let examplesWin = null;
+  async function openExamples() {
+    const list = await examples();
+    if (!examplesWin) {
+      const a = screen.area.getBoundingClientRect();
+      examplesWin = desk.window(screen, {
+        id: 'examples', title: 'Examples', x: Math.max(0, Math.min(200, a.width - 360)), y: 40, w: Math.min(360, a.width), h: Math.min(440, a.height - 40), minW: 200, minH: 140,
+        onMessage: async (msg) => {
+          if (msg.kind === 'close') { examplesWin.close(); examplesWin = null; return; }
+          if (msg.kind === 'gadget' && msg.id.startsWith('ex:')) await openExample(msg.id.slice(3));
+        },
+      });
+    }
+    const n = cols(examplesWin);
+    const box = document.createElement('div');
+    box.className = 'list cast-list';
+    for (const ex of list) box.appendChild(desk.button(examplesWin, `ex:${ex.id}`, fit(ex.title, n - 2), { cls: 'item' }));
+    examplesWin.body.replaceChildren(line(fit('The demo games, to open and change. Save puts your copy in a folder.', n)), box);
+    examplesWin.toFront();
+    examplesWin.activate();
+    return examplesWin;
   }
 
   // A new script beside the main script, with its `include` line in the main script (D-211),
@@ -1450,7 +1536,7 @@
     const n = cols(aboutWin);
     const lines = [
       `BeSpoke Studio ${STUDIO_BUILD.version}`,
-      'Start a New project or open a project folder to check its scripts, Play to run the game, Art to paint its PNGs, Rooms to lay out its scenes, and Cast to name its people and values. A script window edits its text.',
+      'Start a New project, open one of the demo games from Open example, or open a project folder to check its scripts, Play to run the game, Art to paint its PNGs, Rooms to lay out its scenes, and Cast to name its people and values. A script window edits its text.',
       menuHint(),
       'Drag the screen down by its title bar.',
     ];
@@ -1479,6 +1565,7 @@
         items: [
           { id: 'new-project', label: 'New project...' },
           { id: 'open-folder', label: 'Open folder...', key: 'O' },
+          { id: 'open-example', label: 'Open example...' },
           { id: 'open-files', label: 'Open files...' },
           { id: 'new-script', label: 'New script...' },
           { id: 'edit-script', label: 'Edit script' },
@@ -1514,6 +1601,7 @@
   async function command(id) {
     switch (id) {
       case 'new-project': return newProject();
+      case 'open-example': return openExamples();
       case 'new-script': return newScript();
       case 'edit-script': {
         const path = pickedScript();
@@ -1589,6 +1677,8 @@
     play,
     exportPage,
     newProject,
+    openExample,
+    examples: () => examples().then((l) => l.map((e) => ({ id: e.id, title: e.title, main: e.main, host: e.host, files: e.files.map((f) => f.path) }))),
     newScript,
     openScript: (path, l, c, opts) => Boolean(openScript(path, l || 1, c || 0, opts)),
     // For tests: the script window's text area and gadgets.

@@ -254,6 +254,8 @@ fn apply_hover(w: *bespoke.display.DisplayWindow, hover: HoverState) void {
     w.selected_inventory_item = hover.item;
 }
 
+const Snapshots = union(enum) { none, write: std.Io.Dir, compare: std.Io.Dir };
+
 const Recorder = struct {
     allocator: std.mem.Allocator,
     window: *bespoke.display.DisplayWindow,
@@ -268,6 +270,12 @@ const Recorder = struct {
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
     variants: bool = true,
+    /// Each scene's code-drawn backdrop is also written as raw RGBA, or compared with the PNG
+    /// committed for the Studio's examples (P50-02).
+    snapshots: Snapshots = .none,
+    /// Snapshots compared, and the labels whose committed PNG no longer matches.
+    snapshots_compared: usize = 0,
+    snapshots_stale: std.ArrayListUnmanaged(u8) = .empty,
     /// The 1280x720 band check of the last recorded frame (P43-08). Its clearance is the smallest
     /// gap a stage draw leaves; the 1920x1080 pass is checked for overlap but does not move it.
     last_check: ?bespoke.display.band.Check = null,
@@ -297,6 +305,7 @@ const Recorder = struct {
         bridge.set_status_hook(art.capture_status);
         bridge.capture_scene(world, spatial, vm, scene orelse vm.current_scene);
         bridge.swap();
+        if (self.snapshots != .none) try self.snapshot(label, bridge.get_frame());
         try self.draw_frame(label, bridge.get_frame());
         const default_hash = self.window.frame_hash().?;
 
@@ -315,6 +324,67 @@ const Recorder = struct {
         // The hovered and talking frames face the band check too, once per scene and after
         // every hash is recorded, so no golden moves (P43-04).
         try self.check_prompts(label, bridge.get_frame());
+    }
+
+    /// The scene's backdrop alone, as the theme draws it before any mark, prop, person, or HUD,
+    /// sampled down to the art size (320x180, one pixel from the middle of each 4x4 block) and
+    /// written as raw RGBA named `<proof>__<scene>.rgba` (P50-02). A scene the theme draws no
+    /// backdrop for writes nothing.
+    fn snapshot(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        const backdrop = art.theme.backdrop orelse return;
+        const pixels = try self.allocator.alloc(u8, @as(usize, WIDTH * HEIGHT * 4));
+        defer self.allocator.free(pixels);
+        @memset(pixels, 0);
+        var canvas = bespoke.display.canvas.Canvas.init(pixels, WIDTH, HEIGHT);
+        if (!backdrop(&canvas, frame)) return;
+        const art_w: usize = @intCast(@divExact(WIDTH, 4));
+        const art_h: usize = @intCast(@divExact(HEIGHT, 4));
+        var small: [320 * 180 * 4]u8 = undefined;
+        for (0..art_h) |y| for (0..art_w) |x| {
+            const from = ((y * 4 + 2) * @as(usize, WIDTH) + x * 4 + 2) * 4;
+            const to = (y * art_w + x) * 4;
+            @memcpy(small[to .. to + 3], pixels[from .. from + 3]);
+            small[to + 3] = 255;
+        };
+        switch (self.snapshots) {
+            .none => {},
+            .write => |dir| {
+                var name_buf: [160]u8 = undefined;
+                var name = std.array_list.Managed(u8).init(self.allocator);
+                defer name.deinit();
+                for (label) |c| if (c == '/') try name.appendSlice("__") else try name.append(c);
+                const file = try std.fmt.bufPrint(&name_buf, "{s}.rgba", .{name.items});
+                try dir.writeFile(std.testing.io, .{ .sub_path = file, .data = &small });
+            },
+            .compare => |dir| {
+                // `<proof>/<scene slug>.png`, as tools/build_examples.py names it.
+                const slash = std.mem.indexOfScalar(u8, label, '/') orelse return;
+                var path = std.array_list.Managed(u8).init(self.allocator);
+                defer path.deinit();
+                try path.appendSlice(label[0 .. slash + 1]);
+                var dash = false;
+                for (label[slash + 1 ..]) |c| {
+                    if (std.ascii.isAlphanumeric(c)) {
+                        if (dash and path.items[path.items.len - 1] != '/') try path.append('-');
+                        dash = false;
+                        try path.append(std.ascii.toLower(c));
+                    } else dash = true;
+                }
+                try path.appendSlice(".png");
+                const bytes = dir.readFileAlloc(std.testing.io, path.items, self.allocator, .limited(1 << 20)) catch |err| switch (err) {
+                    error.FileNotFound => return,
+                    else => return err,
+                };
+                defer self.allocator.free(bytes);
+                var committed = try bespoke.png.decode(self.allocator, bytes);
+                defer committed.deinit(self.allocator);
+                self.snapshots_compared += 1;
+                if (committed.width != art_w or committed.height != art_h or !std.mem.eql(u8, committed.pixels, &small)) {
+                    try self.snapshots_stale.appendSlice(self.allocator, path.items);
+                    try self.snapshots_stale.append(self.allocator, '\n');
+                }
+            },
+        }
     }
 
     /// Records the 16x12 save thumbnail for a scene (P32-03d): its backdrop and actor dots.
@@ -997,13 +1067,24 @@ fn record_accented_names(rec: *Recorder, big: *bespoke.display.DisplayWindow) !v
 }
 
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.array_list.Managed(u8) {
+    var stale: std.ArrayListUnmanaged(u8) = .empty;
+    defer stale.deinit(allocator);
+    return record_all_into(allocator, window, dump_against, variants, .none, null, &stale);
+}
+
+fn record_all_into(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool, snapshots: Snapshots, compared: ?*usize, stale: *std.ArrayListUnmanaged(u8)) !std.array_list.Managed(u8) {
     // The same frames are drawn and band-checked at 1920x1080 in a second window (P43-03); its
     // pixels are thrown away, so no golden grows.
     var big = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, ALT_WIDTH, ALT_HEIGHT);
     defer big.deinit();
     big.set_theme(&art.theme);
     var alt = AltWindow{ .window = &big };
-    var rec = Recorder{ .allocator = allocator, .window = window, .alt = &alt, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
+    var rec = Recorder{ .allocator = allocator, .window = window, .alt = &alt, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants, .snapshots = snapshots };
+    defer {
+        if (compared) |n| n.* = rec.snapshots_compared;
+        stale.appendSlice(allocator, rec.snapshots_stale.items) catch {};
+        rec.snapshots_stale.deinit(allocator);
+    }
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
@@ -1028,6 +1109,31 @@ fn hash_of(record: []const u8, label: []const u8) ?[]const u8 {
         }
     }
     return null;
+}
+
+test "P50-02: each code-drawn backdrop matches the PNG committed for the Studio, or is written with -Dsnapshot-backdrops" {
+    const allocator = std.testing.allocator;
+    const writing = options.snapshot_dir.len > 0;
+    var dir = if (writing)
+        try std.Io.Dir.cwd().createDirPathOpen(std.testing.io, options.snapshot_dir, .{})
+    else
+        try std.Io.Dir.cwd().openDir(std.testing.io, options.snapshot_art_dir, .{});
+    defer dir.close(std.testing.io);
+    var window = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, WIDTH, HEIGHT);
+    defer window.deinit();
+    window.set_theme(&art.theme);
+    var compared: usize = 0;
+    var stale: std.ArrayListUnmanaged(u8) = .empty;
+    defer stale.deinit(allocator);
+    var record = try record_all_into(allocator, &window, null, false, if (writing) .{ .write = dir } else .{ .compare = dir }, &compared, &stale);
+    record.deinit();
+    if (writing) return;
+    // Every committed snapshot is a scene the harness draws; none may drift from its theme.
+    try std.testing.expect(compared >= 26);
+    if (stale.items.len > 0) {
+        std.debug.print("\nthese Studio backdrops no longer match their proof's theme; run `python3 tools/build_examples.py --snapshots`:\n{s}", .{stale.items});
+        return error.SnapshotStale;
+    }
 }
 
 test "P32-02a: every proof scene draws the pixels recorded in its render golden" {

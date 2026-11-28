@@ -94,6 +94,16 @@ CHROME=/usr/bin/google-chrome-stable node tools/studio_smoke.js
 - [ ] A broken edit is not kept: the window names the line, puts the caret there, and keeps your text.
 - [ ] After Save, `git -C ~/studio-trial diff` (after `git add -N fresh`) shows the changed `say` line, an `include "rooms.bespoke"` line, and the new file, and nothing else.
 
+### 3b. Examples
+
+1. Project > Open example. Open The Sunken Vault, then The Donkey of Lamp Point.
+2. In the Donkey, open Art and paint on a backdrop; Play.
+3. Save, and make a new empty folder for it in the picker.
+
+- [ ] Every demo is listed; one whose showcase version runs Zig code says so when it opens.
+- [ ] A proof with code-drawn art opens with its backdrops as PNGs, and Play shows them.
+- [ ] Save writes the whole example into the new folder, and the Project window then names that folder.
+
 ## 4. Opening and saving
 
 1. Open folder (Ctrl+O), choose `~/studio-trial/vault`. Accept the browser's permission prompt when it asks.

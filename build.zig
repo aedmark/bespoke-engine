@@ -329,10 +329,18 @@ pub fn build(b: *std.Build) void {
     const golden_opts = b.addOptions();
     golden_opts.addOption(bool, "update_goldens", b.option(bool, "update-goldens", "Rewrite proofs/golden/*.txt from current proof output (P32-07)") orelse false);
     golden_opts.addOption([]const u8, "golden_dir", b.root.joinString(b.allocator, "proofs/golden") catch @panic("OOM"));
+    // P50-02: `-Dsnapshot-backdrops=<dir>` also writes each code-drawn scene's backdrop there as
+    // raw 320x180 RGBA, for `tools/build_examples.py` to turn into PNGs. Empty: no snapshots.
+    golden_opts.addOption([]const u8, "snapshot_art_dir", b.root.joinString(b.allocator, "proofs/scripts/art") catch @panic("OOM"));
+    golden_opts.addOption([]const u8, "snapshot_dir", b.option([]const u8, "snapshot-backdrops", "Write each proof scene's code-drawn backdrop as 320x180 RGBA into this folder (P50-02)") orelse "");
     proofs_unit_tests.root_module.addOptions("golden_options", golden_opts);
     proofs_unit_tests.root_module.link_libc = true;
     proofs_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
     const run_proofs_unit_tests = b.addRunArtifact(proofs_unit_tests);
+    // The render test compares each Studio example backdrop with its proof's theme (P50-02); the
+    // PNGs are read at run time, so each is an input of this run (tests/test_examples.py keeps
+    // the list in step with the folder).
+    for (STUDIO_SNAPSHOTS) |path| run_proofs_unit_tests.addFileInput(b.path(path));
 
     // P37-03: exercise the installed interfaces instead of comparing constants in-process.
     // The checker reads the package manifest, runs each compiled CLI, and requires exact output.
@@ -614,3 +622,34 @@ pub fn build(b: *std.Build) void {
     studio_step.dependOn(&install_studio.step);
     studio_step.dependOn(&install_play.step);
 }
+
+/// The code-drawn backdrops committed for the Studio's examples (P50-02), written by
+/// `tools/build_examples.py --snapshots`.
+const STUDIO_SNAPSHOTS = [_][]const u8{
+    "proofs/scripts/art/bell_tower/bell-tower-base.png",
+    "proofs/scripts/art/bell_tower/bell-tower-belfry.png",
+    "proofs/scripts/art/borrowed_beard/harbour-office.png",
+    "proofs/scripts/art/borrowed_beard/inn-landing.png",
+    "proofs/scripts/art/borrowed_beard/net-loft-yard.png",
+    "proofs/scripts/art/grid_puzzle/hollin-keep-gallery.png",
+    "proofs/scripts/art/grog_puzzle/saltglass-stockade.png",
+    "proofs/scripts/art/lamp_point/lamp-point.png",
+    "proofs/scripts/art/lamp_point/wreckers-cellar.png",
+    "proofs/scripts/art/long_gallery/locked-studio.png",
+    "proofs/scripts/art/long_gallery/long-gallery.png",
+    "proofs/scripts/art/observatory_puzzle/larkspur-observatory.png",
+    "proofs/scripts/art/spitting_contest/pip-spitting-green.png",
+    "proofs/scripts/art/sword_fighting/drowned-lantern.png",
+    "proofs/scripts/art/sword_fighting/fencing-yard.png",
+    "proofs/scripts/art/sword_fighting/tidewalk.png",
+    "proofs/scripts/art/tavern_heist/tavern.png",
+    "proofs/scripts/art/three_tides/brine-s-boarding-house.png",
+    "proofs/scripts/art/three_tides/charter-yard.png",
+    "proofs/scripts/art/three_tides/gull-roost.png",
+    "proofs/scripts/art/valerius/greyhold-gate.png",
+    "proofs/scripts/art/valerius/greyhold-store.png",
+    "proofs/scripts/art/village/living-village.png",
+    "proofs/scripts/art/weathercock/beacon-hill.png",
+    "proofs/scripts/art/weathercock/the-customs-house.png",
+    "proofs/scripts/art/weathercock/wren-s-attic.png",
+};

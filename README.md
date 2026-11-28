@@ -75,7 +75,7 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 | Emergent society | Autonomous needs-driven agents, witnesses, rumor spread, and justice cascades over the fact store, configured per game: any roster, needs, roles, and places (`src/society.zig`) |
 | Time | Rewind and timeline scrubbing; temporary branch worlds on a countdown (`TemporalHypervisor`) |
 | Peripherals | SDL2 window with verb bar and HUD, procedural chiptune audio, CRC32-checked `.sav` slots, `wasm32-freestanding` target |
-| Studio | `site/studio.html`, one browser page, new in 1.2.0 and on the published site to try: start a project from a starter script, edit script text, paint PNG art, lay out rooms and grids, edit cast, values, dilemmas, and dialogue, play the game beside the editors with its live facts, and export it as one HTML page |
+| Studio | `site/studio.html`, one browser page, new in 1.2.0 and on the published site to try: start a project from a starter script or open any demo game as an example, edit script text, paint PNG art, lay out rooms and grids, edit cast, values, dilemmas, and dialogue, play the game beside the editors with its live facts, and export it as one HTML page |
 
 ---
 

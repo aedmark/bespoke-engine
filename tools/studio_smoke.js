@@ -53,7 +53,11 @@
 //  17. (P47-16, P47-17, D-211) New project writes init's starter into an empty folder (and
 //      refuses one that is not empty), the script window edits text, keeping an edit only when
 //      the project compiles and keeping the file's line endings, and New script adds a file
-//      and its include line; Save writes exactly those bytes, and the command line checks them.
+//      and its include line; Save writes exactly those bytes, and the command line checks them;
+//  18. (P50-03, D-213) Open example lists every demo; one whose showcase deck runs Zig hooks
+//      opens with a note and one without opens silently; an example with code-drawn art carries
+//      its backdrop PNGs, checks, and plays; Save writes it into an empty folder byte for byte as
+//      tools/build_examples.py assembles it.
 'use strict';
 
 const fs = require('fs');
@@ -1120,6 +1124,40 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  new project and text: a non-empty folder refused, init's stage and text starters written and valid, an edit refused at line 6 and one kept with CRLF, New script added rooms.bespoke and its include; ${textCli}`);
+
+    // 18. The demo games as examples.
+    const exList = await evaluate('window.bespokeStudio.examples()');
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'studio', 'examples.json'), 'utf8')).examples;
+    if (exList.length !== manifest.length || exList.some((e, i) => e.id !== manifest[i].id)) throw new Error(`examples: ${exList.map((e) => e.id).join(', ')}`);
+    await evaluate("window.bespokeStudio.openExample('night_watch').then(() => true)");
+    s = await state();
+    if (s.requester || !s.result || !s.result.valid || s.project.main !== 'night_watch.bespoke') throw new Error(`night watch example: ${JSON.stringify({ req: s.requester, result: s.result, main: s.project && s.project.main })}`);
+    await evaluate("window.__ex = window.bespokeStudio.openExample('borrowed_beard'); true");
+    await requester('The Borrowed Beard');
+    await click('.req-buttons .gad');
+    await noRequester();
+    s = await state();
+    const beardFiles = s.project.files.map((f) => f.path);
+    if (beardFiles.join(',') !== 'art/harbour-office.png,art/inn-landing.png,art/net-loft-yard.png,borrowed_beard.bespoke' || !s.result.valid || s.project.files.some((f) => f.dirty)) throw new Error(`borrowed beard example: ${JSON.stringify({ files: beardFiles, result: s.result })}`);
+    const beardRun = await evaluate('window.bespokeStudio.play().then((p) => p && p.status)');
+    if (beardRun !== 'running') throw new Error(`the example did not play: ${beardRun}`);
+    await evaluate("window.bespokeStudio.playGadget('play-pause')");
+    await evaluate(WRITE_FIXTURE({}));
+    await evaluate(`${PROJECT_DIR}.then((d) => { window.__exSave = window.bespokeStudio.save({ handle: d }); return true; })`);
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const exSaved = await evaluate(SNAPSHOT);
+    const want = JSON.parse(spawnSync('python3', ['-c', `
+import sys, json, base64; sys.path.insert(0, 'tools'); import build_examples as b
+ex = next(e for e in b.manifest() if e['id'] == 'borrowed_beard')
+print(json.dumps({p: base64.b64encode(d).decode() for p, d in b.example_files(ex)}))`], { cwd: root, encoding: 'utf8' }).stdout);
+    const gotNames = Object.keys(exSaved).sort();
+    if (gotNames.join(',') !== Object.keys(want).sort().join(',')) throw new Error(`saved example files: ${gotNames.join(', ')}`);
+    for (const [p, b] of Object.entries(want)) if (exSaved[p].b64 !== b) throw new Error(`saved example ${p} differs from build_examples.py`);
+    s = await state();
+    if (s.project.name !== 'project' || !s.project.writable || s.project.files.some((f) => f.dirty)) throw new Error(`after saving the example: ${JSON.stringify(s.project)}`);
+    console.log(`ok  examples: ${exList.length} demos listed; night_watch opens silently, borrowed_beard with its Zig note and 3 backdrop PNGs, checks and plays; Save wrote its ${gotNames.length} files into an empty folder byte for byte`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

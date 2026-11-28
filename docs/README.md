@@ -51,7 +51,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 
 | Role | Files |
 | --- | --- |
-| Build pages and games | `build_site.py` (showcase and proof pages, with `proof_page.js`, `engine_audio.js`, `site_gallery.json`), `build_studio.py`, `build_sunken_vault.py`, `build_lantern_watch.py`, `pack_game_page.py`, `build_editor_grammar.py`, `manual.py` |
+| Build pages and games | `build_site.py` (showcase and proof pages, with `proof_page.js`, `engine_audio.js`, `site_gallery.json`), `build_studio.py`, `build_examples.py` (the Studio's examples, with `studio/examples.json`), `build_sunken_vault.py`, `build_lantern_watch.py`, `pack_game_page.py`, `build_editor_grammar.py`, `manual.py` |
 | Check the repository | `check_docs.py` (runs the next two), `check_third_party.py` (with `third_party_terms.json` and `third_party_baseline.json`), `check_separation.py` (with `separation_baseline.json`), `check_conformance.py`, `check_version.py`, `check_web_budgets.py` (with `web_budgets.json`), `check_tutorial.py`, `check_template_deps.sh` |
 | Drive a browser | `wasm_smoke.js`, `browser_smoke.js`, `studio_smoke.js` (Studio checks also live in `studio/check_wasm.js`) |
 | Release and publish | `package_linux_release.py`, `package_browser_release.py`, `release_archive.py`, `check_linux_release.py`, `deploy_site.py` |

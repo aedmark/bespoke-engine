@@ -34,6 +34,15 @@ SHELL_LOADER = "WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {})"
 MARKERS = ("<!--@FONT-->", "<!--@BUILD-->", "<!--@WINDOWS-->", "<!--@PLAY-->", "<!--@PAINT-->", "<!--@ROOM-->", "<!--@CAST-->", "<!--@DILEMMA-->", "<!--@TALK-->", "<!--@APP-->")
 
 
+def load_build_examples():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build_examples", ROOT / "tools" / "build_examples.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def version() -> str:
     text = (ROOT / "build.zig.zon").read_text(encoding="utf-8")
     match = re.search(r'\.version\s*=\s*"([^"]+)"', text)
@@ -78,6 +87,8 @@ def render(wasm: bytes, play: bytes, font: dict) -> str:
         "shellLoader": SHELL_LOADER,
         "license": LICENSE.read_text(encoding="utf-8"),
         "starters": starters,
+        # The demo games for Open example (P50-03, D-213), gzip-compressed JSON in base64.
+        "examples": load_build_examples().bundle(),
     }
     parts = {
         "<!--@FONT-->": script("const STUDIO_FONT = " + json.dumps(font, separators=(",", ":"), sort_keys=True) + ";"),

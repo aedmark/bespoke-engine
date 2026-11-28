@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Every demo game opens in BeSpoke Studio (`P50-01` to `P50-03`, `D-213`): Project > Open example lists all 24, from The Sunken Vault to the proofs, built into the page; scenes drawn by code come with their backdrops as PNGs to paint over, and Save writes your copy into a folder. A demo whose showcase version runs Zig code says so when it opens and plays from its script alone until Phase 50 moves that code into the script. The proofs' scripts are now `.bespoke` files.
+
 ## 1.2.1 - 2026-11-28
 
 A Studio patch: no engine, language, package, or save change. Projects made by `bespoke init` now build in CI against `v1.2.1`.
