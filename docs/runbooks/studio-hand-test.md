@@ -85,7 +85,7 @@ CHROME=/usr/bin/google-chrome-stable node tools/studio_smoke.js
 
 1. New project from the Project menu, choose Text, and in the folder picker make a new folder `~/studio-trial/fresh`. Then do it again with a folder that already holds a file.
 2. Play the new game for a few turns.
-3. Open `scripts/main.bespoke` from the Project window, press Edit, and change a `say` line's words. Apply. Then break a line (delete a colon) and Apply.
+3. In the Project window, click `scripts/main.bespoke` in the list and press Edit (its button names the script), and change a `say` line's words. Apply. Then break a line (delete a colon) and Apply.
 4. New script, name it `rooms`. In it, write `relation Rested(who)` and Apply. Save.
 
 - [ ] The new folder holds only `scripts/main.bespoke`, written at once, and the project checks valid and plays.
@@ -100,7 +100,8 @@ CHROME=/usr/bin/google-chrome-stable node tools/studio_smoke.js
 2. Without changing anything, Save (Ctrl+S).
 3. In a text editor, add a blank line at the end of `vault/main.bespoke` and save it there. Back in the Studio, make any edit (section 7 has one) and Save.
 
-- [ ] The Project window lists the scripts and art; the main script is marked, and Check reports it valid.
+- [ ] The Project window lists the scripts; the main script is marked `>`, and Check reports it valid.
+- [ ] Clicking another script picks it: Edit opens it as text, and Make main makes it the main script (Check and Play use it).
 - [ ] Save with no edits writes nothing: `git status` is clean.
 - [ ] Save after another program changed a file writes nothing and says which file changed. Undo the outside edit with `git checkout -- .` and reopen the folder.
 

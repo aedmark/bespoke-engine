@@ -30,6 +30,7 @@
   const MAX_DEPTH = 8;
 
   const S = {
+    picked: null, // the script the Project list has picked (pickedScript)
     ready: false,
     scale: DEFAULT_SCALE,
     storage: true,
@@ -293,6 +294,7 @@
 
   async function finishOpen(meta, acc) {
     S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: chooseMain(acc.files) };
+    S.picked = null;
     S.result = null;
     painter.reset();
     roomer.reset();
@@ -319,6 +321,14 @@
     await dilemmer.relist();
     await talker.relist();
     return true;
+  }
+
+  // The script the Project window's list has picked: the main script until another is clicked.
+  function pickedScript() {
+    const p = S.project;
+    if (!p) return null;
+    if (S.picked && p.files.some((f) => f.path === S.picked)) return S.picked;
+    return p.main || null;
   }
 
   function dirtyFiles() {
@@ -995,7 +1005,8 @@
         if (msg.kind === 'close') { projectWin.close(); projectWin = null; return; }
         if (msg.kind === 'resize') { renderProject(); return; }
         if (msg.kind !== 'gadget') return;
-        if (msg.id.startsWith('main:')) { await chooseScript(msg.id.slice(5)); return; }
+        // A click picks a script; Edit opens it, Make main checks and plays it (D-211).
+        if (msg.id.startsWith('pick:')) { S.picked = msg.id.slice(5); renderProject(); return; }
         await command(msg.id);
       },
     });
@@ -1032,12 +1043,21 @@
       out.push(line(fit(`Script: ${p.main || 'none'}`, n)));
       const list = document.createElement('div');
       list.className = 'list';
+      const picked = pickedScript();
       for (const f of p.files.filter((x) => /\.bespoke$/i.test(x.path))) {
-        const b = desk.button(win, `main:${f.path}`, fit(`${f.path === p.main ? '> ' : '  '}${f.path}`, n - 2), { cls: 'item' });
-        if (f.path === p.main) b.classList.add('selected');
+        const b = desk.button(win, `pick:${f.path}`, fit(`${f.path === p.main ? '> ' : '  '}${f.path}${f.dirty ? ' *' : ''}`, n - 2), { cls: 'item' });
+        if (f.path === picked) b.classList.add('selected');
+        b.setAttribute('aria-pressed', String(f.path === picked));
         list.appendChild(b);
       }
       out.push(list);
+      if (picked) {
+        const name = picked.split('/').pop();
+        const acts = [['edit-script', `Edit ${name}`]];
+        if (picked !== p.main) acts.push(['make-main', 'Make main']);
+        acts.push(['new-script', 'New script']);
+        out.push(buttons(win, acts));
+      }
       const r = S.result;
       if (r) {
         const counts = `${r.scenes} scene(s), ${r.routines} routine(s), ${r.rules} rule(s)`;
@@ -1402,6 +1422,7 @@
       return null;
     }
     S.result = r;
+    S.picked = path;
     renderProject();
     await relistEditors();
     openScript(path, 1, 0, { edit: true });
@@ -1460,6 +1481,7 @@
           { id: 'open-folder', label: 'Open folder...', key: 'O' },
           { id: 'open-files', label: 'Open files...' },
           { id: 'new-script', label: 'New script...' },
+          { id: 'edit-script', label: 'Edit script' },
           { id: 'check', label: 'Check script', key: 'K' },
           { id: 'play', label: 'Play game', key: 'G' },
           { id: 'export', label: 'Export page...', key: 'E' },
@@ -1493,6 +1515,12 @@
     switch (id) {
       case 'new-project': return newProject();
       case 'new-script': return newScript();
+      case 'edit-script': {
+        const path = pickedScript();
+        if (!path) { await desk.requester(projectWindow(), { title: 'Edit script', lines: ['Open a project first.'] }); return null; }
+        return openScript(path, 1, 0, { edit: true });
+      }
+      case 'make-main': { const path = pickedScript(); if (path) await chooseScript(path); return null; }
       case 'open-folder': return openFolder();
       case 'open-files': return openFiles();
       case 'check': return check();

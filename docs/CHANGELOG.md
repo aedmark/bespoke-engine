@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio's Project window opens any script as text (`D-211`): clicking a script in the list picks it, its Edit button opens it in a text area, and Make main makes it the main script (a click used to do that straight away). Project > Edit script does the same.
+
 ## 1.2.0 - 2026-11-28
 
 BeSpoke Studio is on the published site as a page to try, and projects made by `bespoke init` now build in CI against `v1.2.0` (`D-212`).

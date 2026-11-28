@@ -1070,6 +1070,9 @@ async function run(pageUrl) {
     const EDIT_SRC = 'scene Yard:\r\n  cast: Hero\r\n  marks: Gate\r\n\r\nroutine Greet(Hero):\r\n  say Hero: "Hello."\r\n';
     await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(EDIT_SRC) }));
     await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    // The Project window's own Edit button opens the picked script (the main one) as text.
+    await click('[data-window="project"] [data-gadget="edit-script"]');
+    await waitFor('Edit from the Project window', async () => ((await evaluate("window.bespokeStudio.scriptState('main.bespoke')")) || {}).editing ? true : null);
     await evaluate("window.bespokeStudio.openScript('main.bespoke', 6, 0, { edit: true })");
     const sstate = () => evaluate("window.bespokeStudio.scriptState('main.bespoke')");
     await waitFor('the text area', async () => ((await sstate() || {}).editing ? true : null));
@@ -1085,6 +1088,9 @@ async function run(pageUrl) {
     if (!(await state()).project.files[0].dirty) throw new Error('the kept edit is not waiting for Save');
     // New script: the file and its include line, checked together; then an edit in it.
     const newOne = await evaluate("window.bespokeStudio.newScript({ name: 'rooms' })");
+    // Picking another script in the list offers Edit and Make main for it.
+    await waitFor('rooms picked', async () => ((await evaluate(`(() => { const b = document.querySelector('[data-window="project"] [data-gadget="edit-script"]'); return b && b.textContent; })()`)) || '').replace(/\s+/g, ' ').includes('rooms.bespoke') ? true : null);
+    if (!await evaluate(`Boolean(document.querySelector('[data-window="project"] [data-gadget="make-main"]'))`)) throw new Error('no Make main for a picked script that is not main');
     if (!newOne || newOne.path !== 'rooms.bespoke' || newOne.line !== 1) throw new Error(`New script: ${JSON.stringify(newOne)}`);
     await waitFor('the new script open for editing', async () => ((await evaluate("window.bespokeStudio.scriptState('rooms.bespoke')")) || {}).editing ? true : null);
     await evaluate(`window.bespokeStudio.scriptText('rooms.bespoke', ${JSON.stringify('# rooms: included by main.bespoke.\nrelation Rested(who)\n')})`);
