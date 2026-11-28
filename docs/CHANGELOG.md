@@ -4,6 +4,15 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 1.2.0 - 2026-11-28
+
+Prepared on 2026-11-28; the tag follows the Studio and release hand tests, and this date moves to the tag's if they differ.
+
+Upgrading from 1.1:
+- Two rules changed, and a script that relied on the old ones behaves differently. A script's own `transition to scene` now places a player who stands in another room on the new room's first mark (`D-208`). A prop that any character carries is no longer named by typed commands in the room its scene listed (`D-209`). No repository script or recorded play-through changed.
+- Packages stay format 1, and every 1.1 package and save loads. A 1.1 reader refuses two kinds of 1.2 package: one with room-block exits (the required `EXIT` section, by name) and one with more than 256 command phrases.
+- Hosts gain `Deck.keyed`; nothing in the supported API was removed or renamed.
+
 - The Studio starts projects and edits text (`P47-16`, `P47-17`, `D-211`): New project writes `bespoke init`'s stage or text starter into an empty folder and opens it; a script window's Edit shows its text in a text area, and Apply keeps it only if the project still compiles; New script adds a script and its `include` line.
 
 - Several phrases on one command line (`P49-05`, `D-210`): `command GoesNorth: "north", "n"`. A script may declare 51 phrases, as before, and `limit commands N` raises that up to 408; a phrase past the limit is now a compile error instead of a frame silently dropped.

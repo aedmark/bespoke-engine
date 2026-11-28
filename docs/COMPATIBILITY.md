@@ -49,6 +49,6 @@ Readers reject a file they cannot read before allocating for or changing decoded
 
 ## Compatibility fixtures
 
-The 1.0 files live in `tests/fixtures/compat/` (`format-1-package.bspk` with its script `format-1.bespoke`, `format-1-save-dice.sav`, and `format-1-save-each.sav`), joined in 1.x by `format-1-cycles.bspk` (`format-1-cycles.bespoke`, `CYCL`, P49-01). Tests and the fuzzer load them without rewriting them. When a 1.x release adds a section or a save version, add a fixture that uses it, and keep every earlier one. The fixtures from before 1.0 were retired with their readers (D-174); git history keeps them.
+The 1.0 files live in `tests/fixtures/compat/` (`format-1-package.bspk` with its script `format-1.bespoke`, `format-1-save-dice.sav`, and `format-1-save-each.sav`), joined in 1.x by `format-1-cycles.bspk` (`format-1-cycles.bespoke`, `CYCL`, P49-01) and, in 1.2, `format-1-exits.bspk` (`format-1-exits.bespoke`, `EXIT`, P47-11). Tests and the fuzzer load them without rewriting them. When a 1.x release adds a section or a save version, add a fixture that uses it, and keep every earlier one. The fixtures from before 1.0 were retired with their readers (D-174); git history keeps them.
 
 Decisions D-172, D-174, and D-187 own the policy. `src/package.zig` and `src/save.zig` own the executable checks.

@@ -1,0 +1,19 @@
+scene Quay:
+  cast: Hero
+  marks: Steps, Gangway
+
+scene Hold:
+  marks: Hatch, Bilge
+
+room Quay:
+  mark Steps at 40 130
+  mark Gangway at 260 130
+  exit Gangway to Hold at Hatch
+
+room Hold:
+  mark Hatch at 60 120
+  mark Bilge at 200 140
+  exit Hatch to Quay at Gangway
+
+routine Idle(Hero):
+  wait 1 ticks

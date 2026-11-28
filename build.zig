@@ -2,7 +2,7 @@ const std = @import("std");
 
 /// Executable version. `tools/check_version.py` keeps this in lockstep with `build.zig.zon` and
 /// both CLI outputs (P37-03).
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external

@@ -3338,6 +3338,24 @@ test "P49-01: colour cycles round-trip in optional CYCL section and 1.0 readers 
     }
 }
 
+test "P47-11: compatibility fixture format-1-exits.bspk loads with its room-block exits" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/format-1-exits.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expect((try sections_of(fixture)).contains(.exits));
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 2), loaded.exits.items.len);
+    try testing.expectEqualStrings("Gangway", loaded.exits.items[0].mark);
+    try testing.expectEqualStrings("Hold", loaded.exits.items[0].to_scene);
+    try testing.expectEqualStrings("Hatch", loaded.exits.items[0].to_mark);
+}
+
 test "P49-01: compatibility fixture format-1-cycles.bspk loads with its colour cycle" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/format-1-cycles.bspk", testing.allocator, .limited(1024 * 1024));
