@@ -13,6 +13,7 @@ const world_mod = @import("world.zig");
 const reserved_mod = @import("reserved.zig");
 const image_mod = @import("image.zig");
 const spatial_mod = @import("spatial.zig");
+const dilemma_mod = @import("dilemma.zig");
 const World = world_mod.World;
 const SpatialSystem = spatial_mod.SpatialSystem;
 
@@ -496,6 +497,78 @@ pub fn cast_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSo
     for (ast.routines.items) |r| try code.append(arena, .{ .handler = false, .name = r.name, .actor = r.entity, .at = lines(expanded, r.line, r.line) });
     for (ast.cue_handlers.items) |h| try code.append(arena, .{ .handler = true, .name = h.cue_name, .actor = if (h.params.len > 0) h.params[0] else "", .at = lines(expanded, h.line, h.line) });
     return .{ .scenes = scenes, .names = names, .axes = axes, .values = values.items, .code = code.items };
+}
+
+/// One `leans` line as the dilemma editor's preview needs it (P47-13, D-203).
+pub const DilemmaLean = struct { points: u32, toward: []const u8, unless: bool };
+pub const DilemmaTierLine = struct { text: []const u8, action: []const u8 };
+/// A dilemma with what its tier preview needs and where its block is written.
+pub const DilemmaInfo = struct {
+    name: []const u8,
+    actor: []const u8,
+    axis: []const u8,
+    counter: []const u8,
+    strong: u8,
+    moderate: u8,
+    leans: []const DilemmaLean,
+    /// Indexed by `dilemma.Tier`: strong and moderate toward `axis`, neutral, moderate and
+    /// strong toward `counter`.
+    tiers: [dilemma_mod.TIER_COUNT]DilemmaTierLine,
+    block: ScriptLines,
+};
+pub const DecisionInfo = struct { name: []const u8, actor: []const u8, options: []const []const u8, block: ScriptLines };
+pub const RedLineInfo = struct { actor: []const u8, options: []const []const u8, at: ScriptLines };
+pub const DilemmaSources = struct {
+    dilemmas: []const DilemmaInfo,
+    decisions: []const DecisionInfo,
+    red_lines: []const RedLineInfo,
+};
+
+/// Parses `source` far enough to list its dilemmas, decisions, and red lines for the Studio's
+/// dilemma editor (P47-13, D-203), as `cast_sources` does: everything lives in `arena`, and a
+/// script that does not parse returns the parse error.
+pub fn dilemma_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) !DilemmaSources {
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    const lines = struct {
+        fn of(e: includes.Expanded, from: u32, to: u32) ScriptLines {
+            const a = e.locate(from);
+            const b = e.locate(to);
+            return .{ .script = a.file, .line = a.line, .end_line = b.line };
+        }
+    }.of;
+    const dilemmas = try arena.alloc(DilemmaInfo, ast.dilemmas.items.len);
+    for (ast.dilemmas.items, dilemmas) |d, *out| {
+        const leans = try arena.alloc(DilemmaLean, d.leans.len);
+        for (d.leans, leans) |l, *o| o.* = .{ .points = l.points, .toward = l.toward, .unless = l.negated };
+        var tiers: [dilemma_mod.TIER_COUNT]DilemmaTierLine = undefined;
+        for (d.responses, &tiers) |r, *t| t.* = .{ .text = r.line, .action = r.action };
+        const bounds = d.tiers orelse .{ dilemma_mod.DEFAULT_STRONG_AT, dilemma_mod.DEFAULT_MODERATE_AT };
+        out.* = .{
+            .name = d.name,
+            .actor = d.actor,
+            .axis = d.axis,
+            .counter = d.counter,
+            .strong = bounds[0],
+            .moderate = bounds[1],
+            .leans = leans,
+            .tiers = tiers,
+            .block = lines(expanded, d.line, d.end_line),
+        };
+    }
+    const decisions = try arena.alloc(DecisionInfo, ast.decisions.items.len);
+    for (ast.decisions.items, decisions) |d, *out| {
+        const options = try arena.alloc([]const u8, d.options.len);
+        for (d.options, options) |o, *n| n.* = o.name;
+        out.* = .{ .name = d.name, .actor = d.actor, .options = options, .block = lines(expanded, d.line, d.end_line) };
+    }
+    const red = try arena.alloc(RedLineInfo, ast.red_lines.items.len);
+    for (ast.red_lines.items, red) |r, *out| out.* = .{ .actor = r.actor, .options = r.options, .at = lines(expanded, r.line, r.line) };
+    return .{ .dilemmas = dilemmas, .decisions = decisions, .red_lines = red };
 }
 
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
@@ -1924,6 +1997,60 @@ test "D-199: room block refusals name the line and the missing thing" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "D-203: dilemma_sources lists dilemmas, decisions, and red lines with their line ranges" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Court:
+        \\  cast: Valerius, Thief
+        \\
+        \\relation Accused(who)
+        \\relation Criminal(who)
+        \\relation Chose(decision, option)
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and "Condoning Harm"
+        \\
+        \\decision Sentence:
+        \\  actor Valerius
+        \\  fires Sentenced
+        \\  requires Accused(Thief)
+        \\  option Execute:
+        \\    picks 1 when Criminal(Thief)
+        \\  option Pardon:
+        \\    picks 1 when Accused(Thief)
+        \\
+        \\red lines Valerius: Execute
+        \\
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  tiers 8 and 4
+        \\  leans 3 toward Justice when Criminal(Thief)
+        \\  strong Justice: "The law is the law." -> Hang
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  neutral: "Show me why." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+        \\  strong Mercy: "Let him go." -> Pardon
+        \\
+    ;
+    const d = try dilemma_sources(arena.allocator(), src, null);
+    try testing.expectEqual(@as(usize, 1), d.dilemmas.len);
+    const b = d.dilemmas[0];
+    try testing.expectEqual(@as(u32, 21), b.block.line);
+    try testing.expectEqual(@as(u32, 32), b.block.end_line);
+    try testing.expectEqual(@as(u8, 8), b.strong);
+    try testing.expectEqual(@as(u8, 4), b.moderate);
+    try testing.expectEqual(@as(u32, 3), b.leans[0].points);
+    try testing.expectEqualStrings("Jail", b.tiers[@intFromEnum(dilemma_mod.Tier.moderate_axis)].action);
+    try testing.expectEqual(@as(u32, 10), d.decisions[0].block.line);
+    try testing.expectEqual(@as(u32, 17), d.decisions[0].block.end_line);
+    try testing.expectEqual(@as(usize, 2), d.decisions[0].options.len);
+    try testing.expectEqual(@as(u32, 19), d.red_lines[0].at.line);
 }
 
 test "D-202: cast_sources lists scenes, display names, axes, starting values, and code with their lines" {

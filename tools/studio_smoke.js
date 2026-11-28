@@ -32,7 +32,10 @@
 //      grid block beside the room block; the command line holds the painted cells as facts;
 //  11. (P47-05, D-202) the Cast window adds a mark (with its room-block line), sets a display
 //      name, declares an axis, and sets a starting value, each one checked line; Save writes
-//      exactly those lines, and the command line holds the new value as a fact.
+//      exactly those lines, and the command line holds the new value as a fact;
+//  12. (P47-13, D-203) the Dilemmas window writes a new dilemma from its form, previews the tier
+//      from the actor's starting value and a lean, the Cast window ticks a red line, and the
+//      command line plays the saved dilemma to the previewed tier's line.
 'use strict';
 
 const fs = require('fs');
@@ -764,6 +767,66 @@ async function run(pageUrl) {
       }
     }
     console.log(`ok  cast editor: a mark with its room line, a display name, an axis, and starting values, each one checked line; ${castCli}`);
+
+    // 12. The Dilemmas window and red lines.
+    const DIL_SRC = 'scene Court:\n  cast: Valerius, Thief\n  marks: Bench\n\nrelation Accused(who)\nrelation Criminal(who)\naxis Justice between Cruelty and Leniency\naxis Mercy between Vengeance and "Condoning Harm"\nremember Justice(Valerius, 4)\n\ndecision Sentence:\n  actor Valerius\n  fires Sentenced\n  requires Accused(Thief)\n  option Execute:\n    picks 1 when Criminal(Thief)\n  option Pardon:\n    picks 1 when Accused(Thief)\n\nroutine Watch(Thief):\n  wait 1 ticks\n  remember Criminal(Thief)\n  remember Accused(Thief)\n';
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(DIL_SRC) }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openDilemmas()');
+    const dil = async () => (await state()).dilemmas;
+    await evaluate("window.bespokeStudio.dilemmaGadget('new')");
+    await waitFor('the new form', async () => ((await dil()).selected === '' ? true : null));
+    const DIL_LINES = ['actor Valerius', 'fires Judged', 'requires Accused(Thief)', 'weighs Justice against Mercy', 'strong Justice: "The law is the law." -> Hang', 'moderate Justice: "A night in the cells." -> Jail', 'neutral: "Show me why." -> Wait', 'moderate Mercy: "Pay for the loaf." -> Fine', 'strong Mercy: "Let him go." -> Free'];
+    await evaluate("window.bespokeStudio.dilemmaGadget('add-line')");
+    await waitFor('ten lines', async () => ((await dil()).lines.length === 10 ? true : null));
+    await evaluate(`(() => {
+      const lines = ${JSON.stringify([...DIL_LINES, 'leans 3 toward Justice when Criminal(Thief)'])};
+      window.bespokeStudio.dilemmaField('name', 'StolenBread');
+      lines.forEach((t, i) => window.bespokeStudio.dilemmaField('l' + i, t));
+      return true;
+    })()`);
+    await evaluate("window.bespokeStudio.dilemmaGadget('apply')");
+    await waitFor('the dilemma written', async () => ((await dil()).dilemmas.includes('StolenBread') ? true : null));
+    if ((await state()).requester) throw new Error(`dilemma apply: ${(await state()).requester}`);
+    // The preview: Justice 4 from the starting value, Mercy 0, and the lean counted: 7, strong.
+    await waitFor('preview fields', () => evaluate(`document.querySelector('[data-window="dilemmas"] input[name="pv-axis"]') !== null`));
+    const prefilled = await evaluate(`document.querySelector('[data-window="dilemmas"] input[name="pv-axis"]').value`);
+    if (prefilled !== '4') throw new Error(`the preview did not start from Valerius's Justice 4: ${prefilled}`);
+    await evaluate("window.bespokeStudio.dilemmaGadget('lean:0')");
+    await delay(100);
+    await evaluate("window.bespokeStudio.dilemmaGadget('preview')");
+    const preview = await waitFor('the preview', async () => (await dil()).preview);
+    if (preview.delta !== 7 || preview.action !== 'Hang') throw new Error(`preview: ${JSON.stringify(preview)}`);
+    // A red line from the Cast window's checklist.
+    await evaluate('window.bespokeStudio.openCast()');
+    await evaluate("window.bespokeStudio.castGadget('member:cast\u0000Valerius')");
+    await waitFor('the red line checklist', () => evaluate(`document.querySelector('[data-window="cast"] [data-gadget="red:Execute"]') !== null`));
+    await evaluate("window.bespokeStudio.castGadget('red:Execute')");
+    await waitFor('red line ticked', () => evaluate(`(() => { const b = document.querySelector('[data-window="cast"] [data-gadget="red:Execute"]'); return b && b.getAttribute('aria-pressed') === 'true'; })()`));
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const dilAfter = await evaluate(SNAPSHOT);
+    const dilText = Buffer.from(dilAfter['main.bespoke'].b64, 'base64').toString('latin1');
+    const dilBlock = `axis Mercy between Vengeance and "Condoning Harm"\n\ndilemma StolenBread:\n${[...DIL_LINES, 'leans 3 toward Justice when Criminal(Thief)'].map((t) => `  ${t}`).join('\n')}\n\nremember Justice(Valerius, 4)\n`;
+    if (!dilText.includes(dilBlock) || !dilText.includes('    picks 1 when Accused(Thief)\n\nred lines Valerius: Execute\n')) throw new Error(`dilemma save:\n${dilText}`);
+    // Every byte outside the two edits is the script as opened.
+    const outside = dilText.replace(dilBlock, 'axis Mercy between Vengeance and "Condoning Harm"\nremember Justice(Valerius, 4)\n').replace('\nred lines Valerius: Execute\n', '');
+    if (outside !== DIL_SRC) throw new Error(`the dilemma editor changed other bytes:\n${JSON.stringify(outside)}`);
+    let dilCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-dilemma-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'main.bespoke'), dilText);
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['run', path.join(dir, 'main.bespoke'), '--headless', '--ticks', '6'], { encoding: 'utf8' });
+        if (run.status !== 0 || !run.stdout.includes(`Valerius: "${preview.text}"`)) throw new Error(`bespoke run on the saved dilemma:\n${run.stdout.slice(-800)}${run.stderr}`);
+        dilCli = `bespoke run plays it to the previewed line ("${preview.text}")`;
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  dilemma editor: a new dilemma from its form, previewed at delta ${preview.delta} (${preview.action}), a red line ticked; ${dilCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

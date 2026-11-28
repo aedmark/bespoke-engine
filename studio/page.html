@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>BeSpoke Studio</title>
-<!-- Source: studio/page.html, studio/windows.js, studio/play.js, studio/paint.js, studio/room.js, studio/cast.js, studio/studio.js. Built into site/studio.html
+<!-- Source: studio/page.html, studio/windows.js, studio/play.js, studio/paint.js, studio/room.js, studio/cast.js, studio/dilemma.js, studio/studio.js. Built into site/studio.html
      by tools/build_studio.py (P47-01, D-192); edit the sources, not the built page. -->
 <style>
   /* Seven pens, BeSpoke's own (D-192 item 3). Every size is a multiple of --px, one font
@@ -120,6 +120,8 @@
   /* The cast editor (P47-05): one scrolling column of lists and fields. */
   .cast-scroll { flex: 1; min-height: 0; overflow: hidden auto; display: flex; flex-direction: column; gap: calc(2 * var(--px)); }
   .cast-list { flex: none; max-height: calc(60 * var(--px)); }
+  .field-row { flex-wrap: nowrap; align-items: center; }
+  .field-row .field { flex: 1; min-width: 0; }
   .gad.selected { box-shadow: var(--in); background: var(--pen-fill); color: var(--pen-filltext); }
   .swatches { gap: var(--px); }
   .gad.swatch { width: var(--gad); padding: 0; background: var(--swatch); }
@@ -149,6 +151,7 @@
 <!--@PAINT-->
 <!--@ROOM-->
 <!--@CAST-->
+<!--@DILEMMA-->
 <!--@APP-->
 </body>
 </html>

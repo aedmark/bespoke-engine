@@ -4,8 +4,9 @@
 // character's starting values. It adds a name to a scene, sets display names, declares axes, and
 // sets starting values. Every change is one line written by the Studio module (a new list line
 // at the end of a scene's block, a `name` line, an `axis` line, or a top-level `remember` line),
-// checked with the compiler, and kept only if it checks. Dilemmas, appeals, and red lines are
-// P47-13.
+// checked with the compiler, and kept only if it checks. A character's red lines are a
+// checklist of the options its decisions offer (P47-13, D-203); dilemmas have their own window
+// (dilemma.js).
 'use strict';
 
 // eslint-disable-next-line no-unused-vars
@@ -159,6 +160,23 @@ function createCast(desk, screen, hooks) {
           parts.push(input(`value:${ax.name}`, ax.name, v ? v.value : ''));
         }
         if (L.axes.length) parts.push(row([['set-values', 'Set values']]));
+        // Red lines (D-203 item 4): the options this character's decisions offer, ticked when
+        // the character refuses them.
+        const d = hooks.listDilemmas();
+        const options = d && d.valid ? [...new Set(d.decisions.filter((x) => x.actor === name).flatMap((x) => x.options))] : [];
+        if (options.length) {
+          const refused = new Set(((d.red_lines.find((x) => x.actor === name) || {}).options) || []);
+          parts.push(line('Red lines: options never taken'));
+          const r = document.createElement('div');
+          r.className = 'row';
+          for (const opt of options) {
+            const b = desk.button(win, `red:${opt}`, `${refused.has(opt) ? '* ' : ''}${opt}`);
+            if (refused.has(opt)) b.classList.add('selected');
+            b.setAttribute('aria-pressed', String(refused.has(opt)));
+            r.appendChild(b);
+          }
+          parts.push(r);
+        }
         const code = L.code.filter((k) => k.actor === name);
         if (code.length) {
           parts.push(line('Routines and handlers'));
@@ -180,10 +198,11 @@ function createCast(desk, screen, hooks) {
     win.body.replaceChildren(...out);
   }
 
-  // Writes one record; a refusal says why and keeps every field as typed.
-  async function write(record) {
+  // Writes one record; a refusal says why and keeps every field as typed. `via` is the module
+  // call: the cast write, or the dilemma module's for red lines.
+  async function write(record, via = hooks.writeCast) {
     const before = hooks.scriptBytes();
-    const r = hooks.writeCast(record);
+    const r = via(record);
     if (!r) return false;
     if (!r.written) {
       C.error = r.refused || (r.result && r.result.message) || 'the edit was refused';
@@ -257,6 +276,14 @@ function createCast(desk, screen, hooks) {
         if (!await write(`value\t${ax.name}\t${C.member.name}\t${typed}`)) return;
       }
       await reload();
+      return;
+    }
+    if (id.startsWith('red:')) {
+      const opt = id.slice(4);
+      const d = hooks.listDilemmas();
+      const current = new Set(((d && d.valid && d.red_lines.find((x) => x.actor === C.member.name)) || {}).options || []);
+      if (current.has(opt)) current.delete(opt); else current.add(opt);
+      if (await write(['redlines', C.member.name, ...current].join('\t'), hooks.writeRedLines)) await reload();
       return;
     }
     if (id.startsWith('code:')) {

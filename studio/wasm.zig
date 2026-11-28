@@ -151,6 +151,33 @@ export fn studio_write_cast(main_ptr: [*]const u8, main_len: usize, edit_ptr: [*
     return if (ok) 1 else 0;
 }
 
+/// Lists dilemmas, decisions, and red lines as JSON in the result buffer (P47-13, D-203).
+/// 1 listed, 0 the check's JSON instead, -1 out of memory.
+export fn studio_dilemmas(main_ptr: [*]const u8, main_len: usize) i32 {
+    const ok = project.dilemmas(main_ptr[0..main_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+/// Writes a dilemma block or a red lines line from tab-separated records and checks the
+/// project. 1 written, 0 refused (JSON says why), -1 out of memory.
+export fn studio_write_dilemma(main_ptr: [*]const u8, main_len: usize, edit_ptr: [*]const u8, edit_len: usize) i32 {
+    const ok = project.write_dilemma(main_ptr[0..main_len], edit_ptr[0..edit_len]) catch |err| switch (err) {
+        error.UnwritableName => {
+            _ = project.refuse_room("a name holds a double quote, which a script line cannot write") catch return -1;
+            return 0;
+        },
+        else => return -1,
+    };
+    return if (ok) 1 else 0;
+}
+
+/// The tier a dilemma lands in for the given values and counting leans, with the engine's own
+/// arithmetic, as JSON in the result buffer. 1 computed, 0 refused, -1 out of memory.
+export fn studio_preview_tier(main_ptr: [*]const u8, main_len: usize, name_ptr: [*]const u8, name_len: usize, axis_value: i32, counter_value: i32, counting: u32) i32 {
+    const ok = project.preview_tier(main_ptr[0..main_len], name_ptr[0..name_len], axis_value, counter_value, counting) catch return -1;
+    return if (ok) 1 else 0;
+}
+
 /// Copies the table's bytes for `path` into the blob, so the page reads back a script the
 /// module edited. 1 found, 0 not in the table.
 export fn studio_file(path_ptr: [*]const u8, path_len: usize) i32 {

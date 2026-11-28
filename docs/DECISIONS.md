@@ -2565,6 +2565,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** all of Phase 45 in one item, rejected as too large to review; editing routine bodies, rejected because it is a script editor; a new `values <Character>:` declaration owned by the editor, rejected to avoid a language change; appending to the existing list line, rejected because it rewrites a line the author wrote.
 
+## D-203 The Dilemma Editor Owns the Block, Takes Clauses as Text, Previews the Tier, and Ticks Red Lines (2026-11-27, status: accepted; P47-13, follows D-202)
+
+**Context.** P47-13 is the Studio's editor for dilemmas (D-146), their drift (D-148) and appeals (D-149, D-150), tier settings (D-183), and red lines (D-145), split from P47-05 (D-202). A dilemma block has many line kinds: `actor`, `fires`, `requires`/`unless` trigger lines, `weighs`, `tiers`, up to eight `leans`, five tier lines with a spoken line and an action, up to eight `drifts`, and `appeals`. Red lines are one `red lines <Character>: <Option>, ...` line per character, naming options the character's decisions offer. The maintainer chose on 2026-11-27.
+
+**Decision.**
+1. **Own the block.** A form holds every line of a dilemma, and Apply rewrites the block whole where it stands, checked with the compiler before it is kept (D-197 item 4); a block with comments asks first. A new dilemma goes after the last dilemma, else after the last axis.
+2. **Clauses are typed text.** Each `requires`, `unless`, `leans`, and `drifts` clause is a text field written as typed; the compiler checks it and names any mistake.
+3. **A tier preview.** The actor's starting values on the two weighed axes, plus a checkbox per `leans` line for whether it holds, give the delta and the tier, with its spoken line and action, computed with the dilemma's own tier boundaries (`tiers`, or 7 and 3).
+4. **Red lines are a checklist.** In the Cast window, a character's decision options are a checklist; a change rewrites that character's `red lines` line in place, or adds one after the last decision, or removes it when none is ticked. The compiler still refuses a decision left with every option vetoed and a dilemma tier whose action is a red line.
+
+**Consequences.** Built 2026-11-27 (session 132). The parser keeps the line of the last token it consumed, which gives every block its true last line; dilemma, decision, and red-lines ranges come from it, and the supported `compiler.dilemma_sources` reports them. The form shows the block's lines as written, read from the file. The preview is computed in the Studio module with the engine's own `dilemma.tier_in`, not repeated in the page, so the preview and the game cannot disagree; the smoke test also plays the saved dilemma with `bespoke run` to the previewed line. A lean's preview checkbox means the line counts, whether it is a `when` or an `unless` line. A dilemma is not renamed by the editor. A block the Studio inserts is now followed by a blank line when the next line is not blank. `bespoke-studio.wasm` went from 571,805 to 584,839 bytes.
+
+**Alternatives:** editing lines in place, rejected as much more splicing for a block of many line kinds; pickers for clauses, rejected as larger than the gain while wildcards and negation would need their own controls; no preview, rejected because a tier is the dilemma's whole point and otherwise needs a play-through to see; a typed red-lines list, rejected because the options are a known set.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

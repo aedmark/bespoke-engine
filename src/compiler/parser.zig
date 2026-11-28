@@ -500,6 +500,9 @@ pub const DecisionDecl = struct {
     cue: []const u8,
     clauses: []const DecisionClauseDecl,
     options: []const DecisionOptionDecl,
+    /// The block's first and last lines, in the expanded text (P47-13, D-203).
+    line: u32 = 0,
+    end_line: u32 = 0,
 };
 
 /// `axis <Virtue> between <Pole> and <Pole>` declares a value axis (P45-01, D-144). The virtue
@@ -564,6 +567,9 @@ pub const DilemmaDecl = struct {
     /// `tiers S and M` and `drift cap N` (P48-13, D-183); null keeps the defaults.
     tiers: ?[2]u8 = null,
     drift_cap: ?u8 = null,
+    /// The block's first and last lines, in the expanded text (P47-13, D-203).
+    line: u32 = 0,
+    end_line: u32 = 0,
 };
 
 /// `red lines <Character>: <Option>, <Option>` lists options a character never takes in any
@@ -571,6 +577,8 @@ pub const DilemmaDecl = struct {
 pub const RedLinesDecl = struct {
     actor: []const u8,
     options: []const []const u8,
+    /// The `red lines` line, in the expanded text (P47-13, D-203).
+    line: u32 = 0,
 };
 
 /// `path <Name>:` owns the facts and routines available to one operational approach
@@ -817,13 +825,17 @@ pub const Parser = struct {
     part_srcs: std.ArrayListUnmanaged(PartBinding) = .empty,
     cycle_srcs: std.ArrayListUnmanaged(CycleSource) = .empty,
     room_srcs: std.ArrayListUnmanaged(RoomDecl) = .empty,
+    /// The line of the last token `advance` consumed (P47-13, D-203).
+    last_line: u32 = 0,
     /// Top-level `remember` lines in source order (P47-05, D-202).
     initial_fact_lines: std.ArrayListUnmanaged(InitialFactLine) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
             .lexer = lexer,
-            .current = undefined,
+            // A defined token before the first `advance`, which reads the tag of the token it
+            // leaves behind to track `last_line` (D-203); `undefined` here tripped ReleaseSafe.
+            .current = .{ .tag = .eof, .slice = "", .line = 0, .col = 0 },
             .allocator = allocator,
             .diagnostic = null,
             .diag_buf = undefined,
@@ -858,6 +870,11 @@ pub const Parser = struct {
     }
 
     fn advance(self: *Parser) !void {
+        // The line of the last real token consumed, so a block's end is known once it is parsed.
+        switch (self.current.tag) {
+            .indent, .dedent, .newline, .eof => {},
+            else => self.last_line = @intCast(self.current.line),
+        }
         self.current = try self.lexer.next();
         // Skip superfluous newlines
         while (self.current.tag == .newline) {
@@ -1090,7 +1107,10 @@ pub const Parser = struct {
                 },
                 .kw_decision => {
                     try self.count_item(.decisions, ast.decisions.items.len + 1, self.current);
-                    const decl = try self.parse_decision_decl();
+                    const decision_line: u32 = @intCast(self.current.line);
+                    var decl = try self.parse_decision_decl();
+                    decl.line = decision_line;
+                    decl.end_line = self.last_line;
                     for (ast.decisions.items) |prior| {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("decision '{s}' is declared twice", .{decl.name});
                     }
@@ -1098,7 +1118,10 @@ pub const Parser = struct {
                 },
                 .kw_dilemma => {
                     try self.count_item(.dilemmas, ast.dilemmas.items.len + 1, self.current);
-                    const decl = try self.parse_dilemma_decl();
+                    const dilemma_line: u32 = @intCast(self.current.line);
+                    var decl = try self.parse_dilemma_decl();
+                    decl.line = dilemma_line;
+                    decl.end_line = self.last_line;
                     for (ast.dilemmas.items) |prior| {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("dilemma '{s}' is declared twice", .{decl.name});
                     }
@@ -1492,7 +1515,8 @@ pub const Parser = struct {
                         self.current.line == start.line and std.mem.eql(u8, self.current.slice, "lines"))
                     {
                         try self.advance();
-                        const decl = try self.finish_red_lines();
+                        var decl = try self.finish_red_lines();
+                        decl.line = @intCast(start.line);
                         for (ast.red_lines.items) |prior| {
                             if (std.mem.eql(u8, prior.actor, decl.actor)) return self.set_error("red lines for '{s}' are declared twice", .{decl.actor});
                         }

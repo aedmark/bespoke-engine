@@ -909,6 +909,228 @@ pub const Project = struct {
         return self.apply_edits(a, main_path, edits.items);
     }
 
+    /// Lists dilemmas, decisions, and red lines for the dilemma editor (P47-13, D-203), as JSON
+    /// in `result`: each dilemma with its preview data and its block's lines as written (the
+    /// `dilemma` line left out, indentation trimmed), each decision's actor and options, and
+    /// each `red lines` line. A script that does not parse gets the check's JSON and false.
+    pub fn dilemmas(self: *Project, main_path: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse {
+            try self.write_missing(main_path);
+            return false;
+        };
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const d = compiler.dilemma_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        var buf: [1024]u8 = undefined;
+        const strings = struct {
+            fn write(jw: *Json, names: []const []const u8) !void {
+                try jw.raw("[");
+                for (names, 0..) |n, i| {
+                    if (i > 0) try jw.raw(",");
+                    try jw.string(n);
+                }
+                try jw.raw("]");
+            }
+        }.write;
+        try w.raw("{\"valid\":true,\"dilemmas\":[");
+        for (d.dilemmas, 0..) |x, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"name\":");
+            try w.string(x.name);
+            inline for (.{ "actor", "axis", "counter" }) |f| {
+                try w.raw(",\"" ++ f ++ "\":");
+                try w.string(@field(x, f));
+            }
+            try w.raw(",\"strong\":");
+            try w.number(x.strong);
+            try w.raw(",\"moderate\":");
+            try w.number(x.moderate);
+            try w.raw(",\"leans\":[");
+            for (x.leans, 0..) |l, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("{\"points\":");
+                try w.number(l.points);
+                try w.raw(",\"toward\":");
+                try w.string(l.toward);
+                try w.raw(if (l.unless) ",\"unless\":true}" else ",\"unless\":false}");
+            }
+            try w.raw("],\"tiers\":[");
+            for (x.tiers, 0..) |t, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("{\"text\":");
+                try w.string(t.text);
+                try w.raw(",\"action\":");
+                try w.string(t.action);
+                try w.raw("}");
+            }
+            try w.raw("],\"block\":");
+            try self.json_lines(&w, &buf, main_path, dir, x.block);
+            const path = table_script(&buf, main_path, dir, x.block.script);
+            const text = self.find(path) orelse "";
+            try w.raw(if (has_comment(text, x.block.line, x.block.end_line)) ",\"comments\":true}" else ",\"comments\":false}");
+            try w.raw(",\"lines\":[");
+            var first = true;
+            var ln = x.block.line + 1;
+            while (ln <= x.block.end_line) : (ln += 1) {
+                const body = std.mem.trim(u8, text_of_line(text, ln), " \t\r");
+                if (body.len == 0) continue;
+                if (!first) try w.raw(",");
+                first = false;
+                try w.string(body);
+            }
+            try w.raw("]}");
+        }
+        try w.raw("],\"decisions\":[");
+        for (d.decisions, 0..) |x, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"name\":");
+            try w.string(x.name);
+            try w.raw(",\"actor\":");
+            try w.string(x.actor);
+            try w.raw(",\"options\":");
+            try strings(&w, x.options);
+            try w.raw("}");
+        }
+        try w.raw("],\"red_lines\":[");
+        for (d.red_lines, 0..) |x, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"actor\":");
+            try w.string(x.actor);
+            try w.raw(",\"options\":");
+            try strings(&w, x.options);
+            try w.raw("}");
+        }
+        try w.raw("]}");
+        return true;
+    }
+
+    /// Writes a dilemma block or a `red lines` line (P47-13, D-203). `dilemma<TAB>Name` then one
+    /// `line<TAB>text` record per line of the block rewrites the block whole where it stands, or
+    /// adds it after the last dilemma, else the last axis, else at the main script's end;
+    /// `redlines<TAB>Character<TAB>Option...` rewrites that character's line, adds one after the
+    /// last decision, or removes it when no option is given. Checked before it is kept.
+    pub fn write_dilemma(self: *Project, main_path: []const u8, request: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const source = self.find(main_path) orelse return self.refuse_room("the project has no main script");
+        const dir = parent_of(main_path);
+        var reader = Reader{ .project = self, .dir = dir };
+        const d = compiler.dilemma_sources(a, source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var buf: [1024]u8 = undefined;
+        var records = std.mem.splitScalar(u8, request, '\n');
+        const head = records.next() orelse "";
+        var head_fields = std.mem.splitScalar(u8, head, '\t');
+        const kind = head_fields.next() orelse "";
+        var edits: std.ArrayList(Edit) = .empty;
+        if (std.mem.eql(u8, kind, "dilemma")) {
+            const name = head_fields.next() orelse "";
+            if (!is_image_word(name)) return self.refuse_room("a dilemma's name is one word: a letter, then letters, digits, or underscores");
+            var lines: std.ArrayList([]const u8) = .empty;
+            try lines.append(a, try std.fmt.allocPrint(a, "dilemma {s}:", .{name}));
+            while (records.next()) |record| {
+                if (record.len == 0) continue;
+                if (!std.mem.startsWith(u8, record, "line\t")) return self.refuse_room("the dilemma edit is not one the Studio understands");
+                const text = std.mem.trim(u8, record["line\t".len..], " ");
+                if (text.len == 0) continue;
+                if (std.mem.indexOfAny(u8, text, "\t\r") != null) return self.refuse_room("a line cannot hold a tab");
+                try lines.append(a, try std.fmt.allocPrint(a, "  {s}", .{text}));
+            }
+            if (lines.items.len == 1) return self.refuse_room("a dilemma needs its lines");
+            const existing = for (d.dilemmas) |x| {
+                if (std.mem.eql(u8, x.name, name)) break x;
+            } else null;
+            if (existing) |x| {
+                try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, x.block.script)), .from = x.block.line, .to = x.block.end_line, .insert = false, .lines = lines.items });
+            } else if (d.dilemmas.len > 0) {
+                const last = d.dilemmas[d.dilemmas.len - 1].block;
+                try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, last.script)), .from = last.end_line, .insert = true, .lines = lines.items });
+            } else {
+                const c = compiler.cast_sources(a, source, reader.source()) catch |err| {
+                    if (err == error.OutOfMemory) return err;
+                    return self.check(main_path);
+                };
+                if (c.axes.len > 0) {
+                    const last = c.axes[c.axes.len - 1].at;
+                    try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, last.script)), .from = last.end_line, .insert = true, .lines = lines.items });
+                } else try edits.append(a, .{ .path = main_path, .from = line_count(source), .insert = true, .lines = lines.items });
+            }
+        } else if (std.mem.eql(u8, kind, "redlines")) {
+            const actor = head_fields.next() orelse "";
+            if (actor.len == 0) return self.refuse_room("red lines need a character");
+            var options: std.ArrayList(u8) = .empty;
+            var count: usize = 0;
+            while (head_fields.next()) |opt| {
+                if (opt.len == 0) continue;
+                if (count > 0) try options.appendSlice(a, ", ");
+                try options.appendSlice(a, try atom_name(a, opt));
+                count += 1;
+            }
+            const line = try std.fmt.allocPrint(a, "red lines {s}: {s}", .{ try room_name(a, actor), options.items });
+            const existing = for (d.red_lines) |x| {
+                if (std.mem.eql(u8, x.actor, actor)) break x;
+            } else null;
+            const lines: []const []const u8 = if (count == 0) &.{} else try a.dupe([]const u8, &.{line});
+            if (existing) |x| {
+                try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, x.at.script)), .from = x.at.line, .to = x.at.line, .insert = false, .lines = lines });
+            } else {
+                if (count == 0) return self.refuse_room("the character has no red lines to remove");
+                if (d.decisions.len == 0) return self.refuse_room("red lines name decision options, and the script declares no decision");
+                const last = d.decisions[d.decisions.len - 1].block;
+                try edits.append(a, .{ .path = try a.dupe(u8, table_script(&buf, main_path, dir, last.script)), .from = last.end_line, .insert = true, .lines = lines });
+            }
+        } else return self.refuse_room("the dilemma edit is not one the Studio understands");
+        return self.apply_edits(a, main_path, edits.items);
+    }
+
+    /// The tier a dilemma lands in (P47-13, D-203) for the actor's values on its two axes and the
+    /// `leans` lines that count (bit i of `counting` for line i), with the engine's own
+    /// `dilemma.tier_in`, as `{"delta":N,"tier":T,"text":..,"action":..}` in `result`.
+    pub fn preview_tier(self: *Project, main_path: []const u8, name: []const u8, axis_value: i32, counter_value: i32, counting: u32) !bool {
+        self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse return self.refuse_room("the project has no main script");
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        var reader = Reader{ .project = self, .dir = parent_of(main_path) };
+        const d = compiler.dilemma_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        const x = for (d.dilemmas) |y| {
+            if (std.mem.eql(u8, y.name, name)) break y;
+        } else return self.refuse_room("the script declares no such dilemma");
+        var delta: i32 = axis_value - counter_value;
+        for (x.leans, 0..) |l, i| {
+            if (i >= 32 or counting & (@as(u32, 1) << @intCast(i)) == 0) continue;
+            const p: i32 = @intCast(l.points);
+            delta += if (std.mem.eql(u8, l.toward, x.axis)) p else -p;
+        }
+        const tier = bespoke.dilemma.tier_in(delta, x.strong, x.moderate);
+        const t = x.tiers[@intFromEnum(tier)];
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        try w.raw("{\"delta\":");
+        try w.number(delta);
+        try w.raw(",\"tier\":");
+        try w.number(@intFromEnum(tier));
+        try w.raw(",\"text\":");
+        try w.string(t.text);
+        try w.raw(",\"action\":");
+        try w.string(t.action);
+        try w.raw("}");
+        return true;
+    }
+
     pub fn refuse_room(self: *Project, why: []const u8) !bool {
         self.result.clearRetainingCapacity();
         var w = Json{ .list = &self.result, .allocator = self.allocator };
@@ -1069,6 +1291,13 @@ fn merge_rects(width: u32, height: u32, set: []const bool, used: []bool, a: Allo
     return out.items;
 }
 
+/// Line `n` of `text`, without its line ending.
+fn text_of_line(text: []const u8, n: u32) []const u8 {
+    const start = line_start(text, n);
+    const end = std.mem.indexOfScalarPos(u8, text, start, '\n') orelse text.len;
+    return std.mem.trimEnd(u8, text[start..end], "\r");
+}
+
 fn listed(sc: compiler.CastScene, thing: []const u8) bool {
     for ([_][]const []const u8{ sc.cast, sc.props, sc.marks }) |names| {
         for (names) |name| if (std.mem.eql(u8, name, thing)) return true;
@@ -1159,7 +1388,10 @@ fn insert_block(a: Allocator, text: []const u8, after: u32, lines: []const []con
         try out.appendSlice(a, l);
         try out.appendSlice(a, eol);
     }
-    try out.appendSlice(a, text[at..]);
+    // A blank line after the block too, unless the next line is already blank.
+    const rest = text[at..];
+    if (rest.len > 0 and rest[0] != '\n' and !std.mem.startsWith(u8, rest, "\r\n")) try out.appendSlice(a, eol);
+    try out.appendSlice(a, rest);
     return .{ .bytes = out.items, .line = after + 2 };
 }
 
@@ -1651,4 +1883,56 @@ test "the cast editor adds a name, sets a display name, an axis, and a starting 
     try std.testing.expect(!try p.write_cast("main.bespoke", "value\tPride\tValerius\t1"));
     try std.testing.expect(!try p.write_cast("main.bespoke", "add\tCourt\tmarks\tBench"));
     try std.testing.expectEqualStrings(now, p.find("main.bespoke").?);
+}
+
+test "the dilemma editor writes a block and red lines, and previews tiers with the engine's arithmetic" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    const before =
+        \\scene Court:
+        \\  cast: Valerius, Thief
+        \\
+        \\relation Accused(who)
+        \\relation Criminal(who)
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and "Condoning Harm"
+        \\remember Justice(Valerius, 4)
+        \\
+        \\decision Sentence:
+        \\  actor Valerius
+        \\  fires Sentenced
+        \\  requires Accused(Thief)
+        \\  option Execute:
+        \\    picks 1 when Criminal(Thief)
+        \\  option Pardon:
+        \\    picks 1 when Accused(Thief)
+        \\
+    ;
+    try p.add("main.bespoke", before);
+    const block = "dilemma\tStolenBread\nline\tactor Valerius\nline\tfires Judged\nline\trequires Accused(Thief)\nline\tweighs Justice against Mercy\n" ++
+        "line\tleans 3 toward Justice when Criminal(Thief)\nline\tstrong Justice: \"The law is the law.\" -> Hang\nline\tmoderate Justice: \"A night in the cells.\" -> Jail\n" ++
+        "line\tneutral: \"Show me why.\" -> Wait\nline\tmoderate Mercy: \"Pay for the loaf.\" -> Fine\nline\tstrong Mercy: \"Let him go.\" -> Free\n";
+    try std.testing.expect(try p.write_dilemma("main.bespoke", block));
+    try std.testing.expect(std.mem.indexOf(u8, p.find("main.bespoke").?, "axis Mercy between Vengeance and \"Condoning Harm\"\n\ndilemma StolenBread:\n  actor Valerius\n  fires Judged\n  requires Accused(Thief)\n  weighs Justice against Mercy\n  leans 3 toward Justice when Criminal(Thief)\n  strong Justice: \"The law is the law.\" -> Hang\n  moderate Justice: \"A night in the cells.\" -> Jail\n  neutral: \"Show me why.\" -> Wait\n  moderate Mercy: \"Pay for the loaf.\" -> Fine\n  strong Mercy: \"Let him go.\" -> Free\n\nremember Justice(Valerius, 4)\n") != null);
+    try std.testing.expect(try p.dilemmas("main.bespoke"));
+    const listing = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, p.result.items, .{});
+    listing.deinit();
+    try std.testing.expect(result_has(&p, "\"lines\":[\"actor Valerius\""));
+
+    // The preview: 4 - 0 + 3 = 7 is strong toward Justice; without the lean, 4 is moderate.
+    const engine = bespoke.dilemma;
+    for ([_]struct { lean: u32, delta: i32 }{ .{ .lean = 1, .delta = 7 }, .{ .lean = 0, .delta = 4 } }) |case| {
+        try std.testing.expect(try p.preview_tier("main.bespoke", "StolenBread", 4, 0, case.lean));
+        var want_buf: [32]u8 = undefined;
+        const want = try std.fmt.bufPrint(&want_buf, "\"tier\":{d}", .{@intFromEnum(engine.tier_in(case.delta, engine.DEFAULT_STRONG_AT, engine.DEFAULT_MODERATE_AT))});
+        try std.testing.expect(result_has(&p, want));
+    }
+
+    // Red lines: added after the last decision, rewritten, then removed; Free is a tier action,
+    // so marking Pardon is fine, and a decision left with no option is refused.
+    try std.testing.expect(try p.write_dilemma("main.bespoke", "redlines\tValerius\tExecute"));
+    try std.testing.expect(std.mem.endsWith(u8, p.find("main.bespoke").?, "    picks 1 when Accused(Thief)\n\nred lines Valerius: Execute\n"));
+    try std.testing.expect(!try p.write_dilemma("main.bespoke", "redlines\tValerius\tExecute\tPardon"));
+    try std.testing.expect(try p.write_dilemma("main.bespoke", "redlines\tValerius"));
+    try std.testing.expect(std.mem.endsWith(u8, p.find("main.bespoke").?, "    picks 1 when Accused(Thief)\n\n"));
 }
