@@ -42,7 +42,8 @@
 //  14. (P47-09, D-205) the Play window's Facts panel lists a running game's facts, and Show
 //      line opens the one line that wrote a fact, lists two lines that could have, and names
 //      the engine system and the dilemma behind a Chose fact;
-//  15. (P47-14, D-206) the Dialogue window edits a dialogue block from its line form, previews
+//  15. (P47-14, D-206) the Dialogue window writes a first dialogue into a script with none,
+//      edits a dialogue block from its line form, previews
 //      it, writes a new one from the template, and Save changes only those blocks; the command
 //      line plays the edited dialogue;
 //  16. (P47-07, D-207) Export page turns The Sunken Vault into one text page and one stage
@@ -918,7 +919,28 @@ async function run(pageUrl) {
     await evaluate("window.bespokeStudio.playGadget('play-pause')");
     console.log(`ok  facts: ${factList.length} live facts listed; Show line opens line 24, offers lines 26 and 30, and names the engine and dilemma StolenBread for Chose`);
 
-    // 15. Writing dialogue.
+    // 15. Writing dialogue. First, a script with no conversations at all: New dialogue opens
+    // the form beside an empty map without a fault, and Apply writes the first dialogue.
+    const faultsBeforeDlg = (await state()).faults.length;
+    await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64('scene Quay:\n  cast: Hero, Guide\n\nroutine Greet(Hero):\n  wait 1 ticks\n') }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openDialogue()');
+    await waitFor('an empty dialogue list', async () => {
+      const d = (await state()).dialogue;
+      return d && d.open && d.conversations.length === 0 ? true : null;
+    });
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-new')");
+    await waitFor('the template beside an empty map', async () => ((((await state()).dialogue).edit || {}).name === 'NewDialogue' ? true : null));
+    await evaluate(`(() => {
+      const v = { 'dlg-name': 'First', 'dlg-l0': 'speaker Guide', 'dlg-l1': 'say "Hello."', 'dlg-l2': 'choice "Bye.":', 'dlg-l3': 'say "Bye."' };
+      for (const [k, val] of Object.entries(v)) window.bespokeStudio.dialogueField(k, val);
+      return true;
+    })()`);
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-apply')");
+    await waitFor('the first dialogue written', async () => ((await state()).dialogue.conversations.some((c) => c.dialogue === 'First') ? true : null));
+    if ((await state()).faults.length !== faultsBeforeDlg) throw new Error(`new dialogue in an empty script: ${(await state()).faults.slice(faultsBeforeDlg).join(' | ')}`);
+    await evaluate("window.bespokeStudio.dialogueGadget('dlg-cancel')");
+
     const DLG_SRC = 'scene Quay:\n  cast: Hero, Guide\n\nrelation Paid(who)\n\ndialogue AskGuide:\n  speaker Guide\n  say "Well, traveller?"\n  choice "Pay the toll." if not Paid(Hero):\n    remember Paid(Hero)\n    say "Thank you kindly."\n  choice "Goodbye.":\n    say "Come back soon."\n\nroutine Greet(Hero):\n  wait 1 ticks\n  talk AskGuide\n';
     await evaluate(WRITE_FIXTURE({ 'main.bespoke': b64(DLG_SRC) }));
     await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);

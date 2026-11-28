@@ -203,9 +203,10 @@ function createTalk(desk, screen, hooks) {
     view.className = 'paint-view';
     const canvas = document.createElement('canvas');
     canvas.className = 'talk-canvas';
-    canvas.setAttribute('aria-label', `Dialogue map of ${L.conversations[T.index].title}`);
-    view.appendChild(canvas);
+    // A new dialogue in a script with no conversations has nothing at `T.index` yet.
     const conv = L.conversations[T.index] || { nodes: [], script: '', title: '' };
+    canvas.setAttribute('aria-label', `Dialogue map of ${conv.title || (T.edit && T.edit.name) || 'a new dialogue'}`);
+    view.appendChild(canvas);
     draw(canvas, conv);
     canvas.addEventListener('click', (e) => {
       const r = canvas.getBoundingClientRect();
